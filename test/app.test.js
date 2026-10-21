@@ -181,3 +181,17 @@ test('admins can add editors, who must choose their own password first', async (
   const users = await sam('/admin/users');
   assert.notEqual(users.status, 200);
 });
+
+test('ADMIN_RESET puts the administrator password back, and quotes around it are ignored', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qos-reset-'));
+  const { loadConfig } = await import('../src/config.js');
+  createApp(loadConfig({ DATA_DIR: dir, ADMIN_EMAIL: 'boss@example.com', ADMIN_PASSWORD: 'FirstPassword1' })).locals.db.close();
+  const app = createApp(loadConfig({ DATA_DIR: dir, ADMIN_EMAIL: 'boss@example.com', ADMIN_PASSWORD: '"SecondPassword2"', ADMIN_RESET: 'true', COOKIE_SECURE: 'false' }));
+  const s = app.listen(0);
+  await new Promise((r) => s.once('listening', r));
+  const res = await fetch(`http://127.0.0.1:${s.address().port}/admin/login`, { ...form({ email: 'boss@example.com', password: 'SecondPassword2' }), redirect: 'manual' });
+  assert.equal(res.status, 303);
+  s.close();
+  app.locals.db.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+});

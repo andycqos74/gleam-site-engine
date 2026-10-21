@@ -103,6 +103,14 @@ never overwrite edits.
 If you'd rather use an existing reverse proxy than a tunnel, delete the `cloudflared` service and uncomment the
 `ports:` lines on `web`.
 
+### Can't sign in?
+
+- Don't use a `$` in `ADMIN_PASSWORD`: Docker Compose treats `$name` as a variable and silently cuts the password
+  short (write `$$` if you must). The container log shows the length of the password it received.
+- To get back in, either set `ADMIN_RESET=true` and redeploy (the `ADMIN_EMAIL` account's password becomes
+  `ADMIN_PASSWORD` again; set it back to `false` afterwards), or open **Containers → web → Console → Connect** in
+  Portainer and run `node src/reset-admin.js you@example.org` to get a temporary password.
+
 ### Back-ups
 
 Everything editors create lives in the `site-data` volume (`site.db` plus the `media` folder). Back up that volume,
@@ -118,6 +126,7 @@ docker run --rm -v <stack>_site-data:/data -v /backups:/backups alpine \
 | Variable | Purpose |
 | --- | --- |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | First administrator, created only when there are no accounts yet |
+| `ADMIN_RESET` | `true` = on start, set the `ADMIN_EMAIL` account's password back to `ADMIN_PASSWORD` |
 | `BASE_URL` | Public address, for canonical links, sitemap and social previews |
 | `CONTACT_TO`, `MAIL_FROM`, `SMTP_*` | Email contact-form messages (they are always stored in Admin → Messages) |
 | `COOKIE_SECURE` | `true` in production (HTTPS only sign-in cookie); blank = automatic |

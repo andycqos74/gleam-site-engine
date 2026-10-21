@@ -45,12 +45,29 @@ export function createAuth(db, config) {
     path: '/',
   });
 
+  // Creates the first administrator from ADMIN_EMAIL / ADMIN_PASSWORD. With ADMIN_RESET=true it also puts that
+  // account's password back to ADMIN_PASSWORD (and re-enables it) on every start, for when the password is lost.
   function ensureAdmin() {
+    const { adminEmail: email, adminPassword: password } = config;
+    if (!email || !password) return;
+    const len = `(password is ${password.length} characters long)`;
+    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
     const { n } = db.prepare('SELECT COUNT(*) AS n FROM users').get();
-    if (n > 0 || !config.adminEmail || !config.adminPassword) return;
-    db.prepare('INSERT INTO users (email, name, role, hash, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(config.adminEmail, 'Administrator', 'admin', hashPassword(config.adminPassword), now());
-    console.log(`Created first administrator ${config.adminEmail}`);
+    if (n === 0) {
+      db.prepare('INSERT INTO users (email, name, role, hash, created_at) VALUES (?, ?, ?, ?, ?)')
+        .run(email, 'Administrator', 'admin', hashPassword(password), now());
+      console.log(`Created first administrator ${email} ${len}`);
+    } else if (config.adminReset) {
+      if (existing) {
+        db.prepare("UPDATE users SET hash = ?, role = 'admin', active = 1, must_change = 0 WHERE id = ?").run(hashPassword(password), existing.id);
+        db.prepare('DELETE FROM sessions WHERE user_id = ?').run(existing.id);
+      } else {
+        db.prepare('INSERT INTO users (email, name, role, hash, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(email, 'Administrator', 'admin', hashPassword(password), now());
+      }
+      console.log(`ADMIN_RESET: ${email} can sign in with ADMIN_PASSWORD ${len}. Set ADMIN_RESET=false once you're in.`);
+    }
+    if (password.length < 10) console.warn('Warning: ADMIN_PASSWORD is shorter than 10 characters. If it contains a $ sign, Docker Compose cut it short there: write $$ instead of $, or avoid $.');
   }
 
   function startSession(res, req, user) {

@@ -6,8 +6,10 @@ export function loadConfig(env = process.env) {
     port: Number(env.PORT || 8080),
     dataDir: env.DATA_DIR || './data',
     baseUrl: (env.BASE_URL || '').replace(/\/+$/, ''),
-    adminEmail: env.ADMIN_EMAIL || '',
-    adminPassword: env.ADMIN_PASSWORD || '',
+    adminEmail: (env.ADMIN_EMAIL || '').trim().replace(/^(['"])(.*)\1$/, '$2'),
+    // Quotes around the value are a common copy-paste slip in Portainer's variable editor; ignore them.
+    adminPassword: (env.ADMIN_PASSWORD || '').trim().replace(/^(['"])(.*)\1$/, '$2'),
+    adminReset: bool(env.ADMIN_RESET, false),
     // Unset: cookies are marked Secure when the request arrived over HTTPS (X-Forwarded-Proto from the proxy/tunnel).
     cookieSecure: env.COOKIE_SECURE == null || env.COOKIE_SECURE === '' ? undefined : bool(env.COOKIE_SECURE, true),
     trustProxy: env.TRUST_PROXY || undefined,

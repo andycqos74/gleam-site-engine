@@ -15,6 +15,7 @@ services:
     environment:
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_RESET: ${ADMIN_RESET:-false}
       BASE_URL: ${BASE_URL}
       CONTACT_TO: ${CONTACT_TO:-}
       MAIL_FROM: ${MAIL_FROM:-}
