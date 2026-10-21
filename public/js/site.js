@@ -1,6 +1,69 @@
 // Visitor behaviour: mobile menu, list filters, gallery lightbox and contact form validation.
 // Everything works without this file too (lists simply show unfiltered, the form posts normally).
 (() => {
+  // ---- Motion: only when anim-init.js switched it on (not in edit mode or with reduced motion) ----
+  const root = document.documentElement;
+  const anim = root.classList.contains('anim');
+  if (anim) {
+    root.classList.add('anim-ready');
+    const byPosition = (a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1);
+    // .shown starts the entrance; .settled afterwards hands transitions back to the normal hover styles.
+    const reveal = (el, settleAfter) => {
+      el.classList.add('shown');
+      setTimeout(() => el.classList.add('settled'), settleAfter);
+    };
+    const watch = (selector, options, onEnter) => {
+      const io = new IntersectionObserver((entries) => {
+        const hits = entries.filter((e) => e.isIntersecting).map((e) => e.target).sort(byPosition);
+        hits.forEach((el) => io.unobserve(el));
+        onEnter(hits);
+      }, options);
+      document.querySelectorAll(selector).forEach((el) => io.observe(el));
+    };
+
+    // Cards, tiles and photos: fade up, staggered within each batch that scrolls into view together.
+    watch(`.prog-card, .story-card, .tile, .product, .pillar, .team-member, .venue-card, .prog-row, .vacancy, .funder,
+      .photo-row > *, .about-photos > *, .camp-photos > *, .shop-arch`, { rootMargin: '0px 0px -8% 0px' }, (els) => {
+      els.forEach((el, i) => {
+        const delay = Math.min(i, 7) * 80;
+        el.style.setProperty('--d', `${delay}ms`);
+        reveal(el, delay + 1000);
+      });
+    });
+
+    // Journey stops pop in when the drawn line reaches them (both use a point 75% down the screen).
+    watch('.stop', { rootMargin: '0px 0px -25% 0px' }, (els) => els.forEach((el) => reveal(el, 1000)));
+
+    // Home timeline: the line draws across, then each dot and milestone in turn.
+    watch('.timeline', { threshold: 0.3 }, (els) => els.forEach((el) => {
+      const items = [...el.children];
+      items.forEach((item, i) => item.style.setProperty('--i', i));
+      reveal(el, items.length * 180 + 1300);
+    }));
+
+    // The dashed route line grows to follow the scroll position, and never shrinks back.
+    const routes = [...document.querySelectorAll('.route')].map((el) => ({ el, p: 0 }));
+    if (routes.length) {
+      let queued = false;
+      const draw = () => {
+        queued = false;
+        const mark = window.innerHeight * 0.75;
+        for (const r of routes) {
+          const rect = r.el.getBoundingClientRect();
+          const p = Math.min(1, Math.max(0, (mark - rect.top - 30) / Math.max(1, rect.height - 60)));
+          if (p > r.p) {
+            r.p = p;
+            r.el.style.setProperty('--p', p.toFixed(4));
+          }
+        }
+      };
+      const queue = () => { if (!queued) { queued = true; requestAnimationFrame(draw); } };
+      addEventListener('scroll', queue, { passive: true });
+      addEventListener('resize', queue);
+      draw();
+    }
+  }
+
   // ---- Mobile menu ----
   const menuBtn = document.querySelector('.menu-btn');
   const nav = document.getElementById('site-nav');
@@ -33,6 +96,12 @@
       [...target.children].forEach((el) => {
         if (!(name in el.dataset)) return;
         const match = value === 'all' || el.dataset[name] === value;
+        if (anim && match) {
+          // Fade the list in afresh rather than letting it snap.
+          el.classList.add('shown', 'settled', 'filter-in');
+          el.style.setProperty('--d', `${Math.min(shown, 8) * 40}ms`);
+          el.addEventListener('animationend', () => el.classList.remove('filter-in'), { once: true });
+        }
         el.hidden = !match;
         if (match) shown++;
       });
@@ -86,19 +155,37 @@
       img.alt = btn.dataset.caption || '';
       caption.textContent = btn.dataset.caption || '';
     };
+    // Zoom the photo out of the tile that was clicked.
+    const zoomFrom = (rect) => {
+      img.style.opacity = '0';
+      img.decode().catch(() => {}).then(() => {
+        img.style.opacity = '';
+        const to = img.getBoundingClientRect();
+        if (!to.width || !to.height) return;
+        img.animate([
+          { transformOrigin: '0 0', transform: `translate(${rect.left - to.left}px, ${rect.top - to.top}px) scale(${rect.width / to.width}, ${rect.height / to.height})`, opacity: 0.5 },
+          { transformOrigin: '0 0', transform: 'none', opacity: 1 },
+        ], { duration: 380, easing: 'cubic-bezier(.2, .8, .2, 1)' });
+      });
+    };
+    const step = (by) => {
+      show(current + by);
+      if (anim) img.animate([{ opacity: 0, translate: `${by * 24}px 0` }, { opacity: 1, translate: '0 0' }], { duration: 260, easing: 'ease-out' });
+    };
     document.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-lightbox]');
       if (!btn) return;
       show(visible().indexOf(btn));
       dialog.showModal();
+      if (anim) zoomFrom(btn.getBoundingClientRect());
     });
-    dialog.querySelector('.lb-prev').addEventListener('click', () => show(current - 1));
-    dialog.querySelector('.lb-next').addEventListener('click', () => show(current + 1));
+    dialog.querySelector('.lb-prev').addEventListener('click', () => step(-1));
+    dialog.querySelector('.lb-next').addEventListener('click', () => step(1));
     dialog.querySelector('.lb-close').addEventListener('click', () => dialog.close());
     dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
     dialog.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowLeft') show(current - 1);
-      if (e.key === 'ArrowRight') show(current + 1);
+      if (e.key === 'ArrowLeft') step(-1);
+      if (e.key === 'ArrowRight') step(1);
     });
   }
 

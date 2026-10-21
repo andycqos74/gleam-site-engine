@@ -86,6 +86,8 @@ test('an editor can change text, a list item and a link, and change history can 
   const { c, json } = await signedIn();
   const editing = await (await c('/')).text();
   assert.match(editing, /data-k="home.hero.sub"/);
+  assert.match(editing, /<html lang="en-GB" class="no-anim">/, 'animations are off while editing');
+  assert.match(await (await fetch(base + '/')).text(), /<html lang="en-GB">[\s\S]*\/js\/anim-init\.js/);
   const journeyId = /data-item="journey" data-id="(\d+)"/.exec(editing)[1];
 
   const res = await json('POST', '/api/save', {

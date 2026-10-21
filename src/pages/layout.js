@@ -22,7 +22,7 @@ export function layout(ctx, k, { page, body, bodyClass }) {
   const pageFields = Object.keys(FIELDS).filter((key) => key.startsWith(`meta.${page}.`) || (page === 'contact' && key.startsWith('contact.map.')) || (page === 'programmes' && key === 'links.booking') || (page === 'gallery' && key.startsWith('links.')));
 
   return html`<!doctype html>
-<html lang="en-GB">
+<html lang="en-GB"${attrs({ class: ctx.editing ? 'no-anim' : null })}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -37,6 +37,7 @@ ${ctx.baseUrl ? html`<meta property="og:image" content="${ctx.baseUrl}/img/trust
 <link rel="preload" href="/fonts/bricolage-grotesque-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/figtree-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/css/site.css?v=${ctx.version}">
+<script src="/js/anim-init.js?v=${ctx.version}"></script>
 ${ctx.user ? html`<link rel="stylesheet" href="/css/editor.css?v=${ctx.version}">` : ''}
 </head>
 <body${attrs({ class: [bodyClass, ctx.editing && 'is-editing'].filter(Boolean).join(' ') || null })}>
