@@ -1,0 +1,43 @@
+# Portainer stack for the QoS Community Trust website.
+# Pulls the image GitHub Actions publishes to ghcr.io; nothing is built on the server.
+# Public access is through a Cloudflare Tunnel (cloudflared): no ports are published on the host.
+# In the Cloudflare dashboard, point the tunnel's public hostname at http://web:8080.
+# Paste into Portainer > Stacks > Add stack > Web editor, then add the variables from stack.env
+# (Environment variables > Advanced mode, or "Load variables from .env file").
+#
+# Everything editors change (words, photos, accounts, messages) is stored in the site-data volume.
+# Back that volume up; the image itself holds no content.
+
+services:
+  web:
+    image: ghcr.io/andycqos74/trust-website:${APP_TAG}
+    restart: unless-stopped
+    environment:
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      BASE_URL: ${BASE_URL}
+      CONTACT_TO: ${CONTACT_TO:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    volumes:
+      - site-data:/data
+    # Not using a tunnel? Remove the cloudflared service and publish a port for your reverse proxy instead:
+    # ports:
+    #   - "127.0.0.1:8081:8080"
+
+  cloudflared:
+    image: cloudflare/cloudflared:${CLOUDFLARED_TAG:-latest}
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      web:
+        condition: service_healthy
+
+volumes:
+  site-data:

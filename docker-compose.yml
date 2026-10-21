@@ -1,0 +1,26 @@
+# Build and run the site locally: cp .env.example .env && docker compose up --build
+# Then open http://localhost:8080 and sign in at http://localhost:8080/admin
+services:
+  web:
+    build:
+      context: .
+      target: final
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+      CONTACT_TO: ${CONTACT_TO:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-}
+    volumes:
+      - site-data:/data
+
+volumes:
+  site-data:
