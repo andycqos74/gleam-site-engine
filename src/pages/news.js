@@ -15,9 +15,9 @@ function status(k, a) {
 // News cards, newest first. Used on the homepage (latest few) and the News page (all).
 export function newsCards(k, articles, { cls = 'news-grid', addable = true } = {}) {
   const cards = articles.map((a, i) => k.item(a, html`
-    <div class="news-photo">
+    ${a.image || k.ed ? html`<div class="news-photo">
       ${k.FI(a, 'image', { cls: 'news-img', sizes: '(max-width: 900px) 100vw, 400px', altField: 'title' })}
-    </div>
+    </div>` : ''}
     <div class="news-body">
       <div class="chips">${k.F(a, 'tag', { cls: `tag tag-${TAG_CYCLE[i % TAG_CYCLE.length]}` })}<time class="news-date" datetime="${a.date}">${formatDate(a.date)}</time></div>
       <h3 class="news-title"><a class="stretch" href="${articleUrl(a)}"${k.ed ? html` data-f="title" data-type="text"` : ''}>${a.title}</a></h3>

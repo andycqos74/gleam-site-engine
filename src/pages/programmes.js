@@ -58,6 +58,7 @@ export function programmes(k) {
 <section class="section">
   ${k.text('programmes.venues.title', { tag: 'h2', cls: 'h-section' })}
   ${k.coll('venues', venues.map((v) => k.item(v, html`
+    ${v.image || k.ed ? k.FI(v, 'image', { cls: 'venue-photo', sizes: '(max-width: 900px) 50vw, 300px', altField: 'name' }) : ''}
     ${k.F(v, 'name', { tag: 'h3', cls: 'venue-name' })}
     ${k.F(v, 'what', { tag: 'p', cls: 'venue-text' })}
     ${v.mapUrl ? html`<a class="venue-map" href="${v.mapUrl}" rel="noopener">Map</a>` : ''}`,

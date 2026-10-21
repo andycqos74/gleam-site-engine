@@ -37,6 +37,22 @@ export function timeline(k, { variant }) {
   { cls: variant === 'route' ? 'route' : 'timeline' });
 }
 
+// Impact figures in a navy band (Home and About). Numbers count up as they scroll into view (site.js).
+export function impactBand(k, prefix) {
+  const stats = k.items('stats');
+  if (!stats.length && !k.ed) return '';
+  return html`<section class="band band-navy impact">
+  <div class="section-head">
+    ${k.text(`${prefix}.impact.eyebrow`, { cls: 'eyebrow eyebrow-gold' })}
+    ${k.text(`${prefix}.impact.title`, { tag: 'h2', cls: 'h-section' })}
+    ${prefix === 'home' ? k.text('home.impact.text', { tag: 'p', cls: 'on-dark-muted impact-text' }) : ''}
+  </div>
+  ${k.coll('stats', stats.map((s) => k.item(s, html`
+    ${k.F(s, 'value', { cls: 'stat-value', keepEmpty: true })}
+    ${k.F(s, 'label', { cls: 'stat-label' })}`, { cls: 'stat' })), { cls: 'stat-grid' })}
+</section>`;
+}
+
 export function home(k) {
   const featured = k.items('programmes').filter((p) => p.featured);
   const stories = k.items('stories');
@@ -84,6 +100,8 @@ export function home(k) {
   }), { cls: 'prog-grid', attrs: { 'data-coll-defaults': k.ed ? JSON.stringify({ featured: true }) : null } })}
 </section>
 
+${impactBand(k, 'home')}
+
 ${news.length || k.ed ? html`<section class="section section-news">
   <div class="section-head split">
     <div>${k.text('home.news.eyebrow', { cls: 'eyebrow eyebrow-blue' })}${k.text('home.news.title', { tag: 'h2', cls: 'h-section' })}</div>
@@ -98,7 +116,7 @@ ${stories.length || k.ed ? html`<section class="band band-gold">
     ${k.link('home.stories.link', { cls: 'more-link more-link-navy' })}
   </div>
   ${k.coll('stories', stories.map((s) => k.item(s, html`
-    ${k.FI(s, 'image', { cls: 'story-photo', sizes: '(max-width: 900px) 100vw, 400px', altField: 'name' })}
+    ${s.image || k.ed ? k.FI(s, 'image', { cls: 'story-photo', sizes: '(max-width: 900px) 100vw, 400px', altField: 'name' }) : ''}
     <div class="story-body">
       <div class="from-to">${k.F(s, 'from', { cls: 'chip chip-sky' })}<span aria-hidden="true">→</span>${k.F(s, 'to', { cls: 'chip chip-navy' })}</div>
       ${k.F(s, 'name', { tag: 'h3', cls: 'story-name' })}

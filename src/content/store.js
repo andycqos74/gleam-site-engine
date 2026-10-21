@@ -5,6 +5,17 @@ import { now } from '../db.js';
 
 export class ValidationError extends Error {}
 
+// Revisions of the starting lists in defaults.js (SEED) to bring into sites that already have content. Add a new
+// entry, with a new key, each time the starting content of existing lists changes. Text fields need no entry:
+// unedited fields always show the current default.
+export const CONTENT_UPDATES = [
+  {
+    key: 'update:2026-10-strategy',
+    replace: ['journey', 'programmes', 'stories', 'timeline', 'pillars', 'team', 'funders', 'venues', 'gallery'],
+    append: ['news'],
+  },
+];
+
 const RICH_OPTIONS = {
   allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'ul', 'ol', 'li', 'h2', 'h3'],
   allowedAttributes: { a: ['href'] },
@@ -35,7 +46,7 @@ export function cleanValue(field, v) {
     case 'url': return cleanUrl(v);
     case 'image': {
       const s = String(v ?? '').trim();
-      if (s && !/^\/(media|img)\/[\w.-]+$/.test(s)) throw new ValidationError('That image is not one uploaded to this site.');
+      if (s && !/^\/(media|img)\/([\w-]+\/)?[\w.-]+$/.test(s)) throw new ValidationError('That image is not one uploaded to this site.');
       return s;
     }
     case 'select': return Object.hasOwn(field.options, v) ? v : field.default;
@@ -54,18 +65,51 @@ export function cleanValue(field, v) {
 export function createStore(db) {
   let fieldCache = null;
 
+  const insertSeed = (coll, data, pos) => db.prepare('INSERT INTO items (coll, pos, data, updated_at) VALUES (?, ?, ?, ?)')
+    .run(coll, pos, JSON.stringify({ ...itemDefaults(coll), ...data, ...(data.date === 'today' ? { date: todayInUK() } : {}) }), now());
+  const metaDone = (key) => !!db.prepare('SELECT 1 FROM meta WHERE key = ?').get(key);
+  const markDone = (key) => db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run(key, now());
+
+  // First start: write each list's starting content once. A brand-new list counts as already having every update.
   const seed = db.transaction(() => {
     for (const [coll, items] of Object.entries(SEED)) {
-      const key = `seeded:${coll}`;
-      if (db.prepare('SELECT 1 FROM meta WHERE key = ?').get(key)) continue;
-      items.forEach((data, i) => {
-        db.prepare('INSERT INTO items (coll, pos, data, updated_at) VALUES (?, ?, ?, ?)')
-          .run(coll, i + 1, JSON.stringify({ ...itemDefaults(coll), ...data, ...(data.date === 'today' ? { date: todayInUK() } : {}) }), now());
-      });
-      db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run(key, now());
+      if (metaDone(`seeded:${coll}`)) continue;
+      items.forEach((data, i) => insertSeed(coll, data, i + 1));
+      markDone(`seeded:${coll}`);
+      for (const u of CONTENT_UPDATES) markDone(`${u.key}:${coll}`);
     }
   });
   seed();
+
+  // Later revisions of the starting content, for sites that are already running. "replace" lists are swapped for
+  // the new SEED only if nobody has edited, added, moved or deleted anything in them (judged from the change
+  // history), so editors' work is never overwritten. "append" lists get the new SEED items whose title isn't there.
+  const applyUpdates = db.transaction(() => {
+    for (const u of CONTENT_UPDATES) {
+      for (const coll of u.replace ?? []) {
+        if (metaDone(`${u.key}:${coll}`)) continue;
+        const edited = db.prepare("SELECT 1 FROM revisions WHERE kind = 'item' AND ref LIKE ? LIMIT 1").get(`${coll}:%`);
+        if (edited) {
+          console.log(`Content update ${u.key}: kept "${coll}" as it is, because it has been edited on this site.`);
+        } else {
+          db.prepare('DELETE FROM items WHERE coll = ?').run(coll);
+          SEED[coll].forEach((data, i) => insertSeed(coll, data, i + 1));
+          console.log(`Content update ${u.key}: refreshed "${coll}".`);
+        }
+        markDone(`${u.key}:${coll}`);
+      }
+      for (const coll of u.append ?? []) {
+        if (metaDone(`${u.key}:${coll}`)) continue;
+        const titles = new Set(db.prepare('SELECT data FROM items WHERE coll = ?').all(coll).map((r) => JSON.parse(r.data).title));
+        let { max } = db.prepare('SELECT COALESCE(MAX(pos), 0) AS max FROM items WHERE coll = ?').get(coll);
+        const added = SEED[coll].filter((data) => !titles.has(data.title));
+        added.forEach((data) => insertSeed(coll, data, ++max));
+        if (added.length) console.log(`Content update ${u.key}: added ${added.length} item(s) to "${coll}".`);
+        markDone(`${u.key}:${coll}`);
+      }
+    }
+  });
+  applyUpdates();
 
   const revision = (userId, kind, ref, action, before, after) =>
     db.prepare('INSERT INTO revisions (at, user_id, kind, ref, action, before, after) VALUES (?, ?, ?, ?, ?, ?, ?)')

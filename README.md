@@ -53,19 +53,21 @@ change at first sign-in.
 
 ## Before go-live
 
-The handover marks these as placeholders. They're all editable in place:
+Copy, figures and many photos come from the Trust's strategy document (*Engage, Empower, Evolve*, October 2026).
+Still to fill in, all editable in place:
 
-- Journey story names, quotes and photos (Home)
-- Timeline years and milestones (`20XX`) (Home and About)
-- Staff names, roles and headshots (About)
-- Programme times, venues and prices marked `TBC` (Programmes)
-- Shop products and `£XX` prices, and where each *Book/Add/Enquire* button goes (Shop)
-- Funder and partner logos (About; the section stays hidden until one is added)
-- Photos for every striped slot. Empty gallery tiles are not shown to visitors.
-- Facebook and Instagram addresses (Gallery → Page settings); the buttons appear once set
-- The default *Book Now* link (Programmes → Page settings), e.g. the online bookings site
+- Programme times, venues and prices marked `TBC` (Programmes), and the default *Book Now* link (Programmes → Page
+  settings), e.g. the online bookings site
+- Shop products' `£XX` prices, and where each *Book/Add/Enquire* button goes (Shop)
+- Staff names, roles and headshots (About; only Ali is shown, three empty places are hidden until filled in)
+- Funder and partner logos and links (About; SPFL Trust, SGN and DWP show as names)
+- A photo for Michael's story and for the programmes without one (Autism Football, Walking Football, KGV Sports Complex)
+- Facebook and Instagram addresses (Gallery → Page settings); the buttons appear once set. The Trust's Facebook
+  page appears to be `https://www.facebook.com/qoscommunity`
 - Review the starter Privacy Policy text
 - The example *Community Football Coach* vacancy starts hidden because its closing date has passed
+
+Photos from the strategy document are in `public/img/trust/`, and editors can reuse them from the photo library.
 
 Notes on the design:
 
@@ -145,3 +147,7 @@ docker run --rm -v <stack>_site-data:/data -v /backups:/backups alpine \
   `k.headline('key')`, `k.link('key')` (with a `key.url` field) or `k.image('key')` in the page template.
 - A new list: add it to `COLLECTIONS` in `src/content/schema.js` (and optional starting items to `SEED` in
   `defaults.js`), then render it with `k.coll()` / `k.item()` / `k.F()` / `k.FI()` / `k.FL()`.
+- Changing the starting content of lists a running site already has: edit `SEED`, then add an entry to
+  `CONTENT_UPDATES` in `src/content/store.js` with a new key. On the next start, each listed collection is replaced
+  only if nobody has edited it there (otherwise it is left alone and the log says so), and `append` collections
+  gain the new items. Text fields need nothing: unedited fields always show the current default.

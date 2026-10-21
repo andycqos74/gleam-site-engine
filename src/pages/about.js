@@ -1,5 +1,5 @@
 import { html } from '../html.js';
-import { timeline } from './home.js';
+import { timeline, impactBand } from './home.js';
 
 const RINGS = ['gold', 'blue', 'green', 'orange'];
 
@@ -11,7 +11,7 @@ export function about(k) {
 <section class="hero hero-split">
   <div class="hero-copy">
     ${k.text('about.hero.eyebrow', { cls: 'eyebrow eyebrow-blue' })}
-    ${k.headline('about.hero.title', { cls: 'h-hero h-76' })}
+    ${k.headline('about.hero.title', { cls: 'h-hero h-76', pills: ['gold', 'blue', 'green'] })}
     ${k.text('about.hero.text', { tag: 'p', cls: 'lede lede-left' })}
   </div>
   <div class="about-photos">
@@ -20,10 +20,31 @@ export function about(k) {
   </div>
 </section>
 
-${k.coll('pillars', k.items('pillars').map((p) => k.item(p, html`
-  ${k.F(p, 'tag', { cls: `tag tag-${p.colour}` })}
-  ${k.F(p, 'title', { tag: 'h2', cls: 'card-title' })}
-  ${k.F(p, 'body', { tag: 'p', cls: 'card-text' })}`, { cls: 'chunky pillar' })), { tag: 'section', cls: 'section-tight pillars' })}
+<section class="section-tight mission" id="mission">
+  <div class="mission-copy">
+    ${k.text('about.mission.eyebrow', { cls: 'eyebrow eyebrow-blue' })}
+    ${k.text('about.mission.title', { tag: 'h2', cls: 'h-section' })}
+    ${k.text('about.mission.text', { tag: 'p', cls: 'mission-text' })}
+  </div>
+  <div class="principles-wrap">
+    ${k.coll('principles', k.items('principles').map((p) => k.item(p, html`
+      ${k.F(p, 'title', { tag: 'h3', cls: 'principle-title' })}
+      ${k.F(p, 'body', { tag: 'p', cls: 'principle-text' })}`, { cls: `principle principle-${p.colour}` })), { cls: 'principles' })}
+    ${k.text('about.principles.note', { tag: 'p', cls: 'principles-note' })}
+  </div>
+</section>
+
+<section class="section-tight pillars-section" id="pillars">
+  <div class="section-head pillars-head">
+    ${k.text('about.pillars.eyebrow', { cls: 'eyebrow eyebrow-blue' })}
+    ${k.text('about.pillars.title', { tag: 'h2', cls: 'h-section' })}
+    ${k.text('about.pillars.text', { tag: 'p', cls: 'lede lede-left pillars-text' })}
+  </div>
+  ${k.coll('pillars', k.items('pillars').map((p) => k.item(p, html`
+    ${k.F(p, 'tag', { cls: `tag tag-${p.colour}` })}
+    ${k.F(p, 'title', { tag: 'h3', cls: 'card-title' })}
+    ${k.F(p, 'body', { tag: 'p', cls: 'card-text' })}`, { cls: 'chunky pillar' })), { cls: 'pillars' })}
+</section>
 
 <section class="band band-blue" id="story">
   <div class="section-head center">
@@ -32,6 +53,8 @@ ${k.coll('pillars', k.items('pillars').map((p) => k.item(p, html`
   </div>
   ${timeline(k, { variant: 'route' })}
 </section>
+
+${impactBand(k, 'about')}
 
 <section class="section" id="team">
   <div class="section-head split">

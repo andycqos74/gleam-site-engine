@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb, now } from './db.js';
@@ -341,7 +342,15 @@ export function createApp(config) {
     const saved = await media.save(req.file.buffer, req.file.originalname, req.user.id);
     res.json({ ok: true, ...saved });
   });
-  api.get('/media', (req, res) => res.json({ media: media.list() }));
+  // The editor's photo library: everything uploaded, then the photos that ship with the site (public/img).
+  const bundled = () => {
+    const dir = path.join(ROOT, 'public/img');
+    const walk = (d, prefix) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory()
+      ? walk(path.join(d, e.name), `${prefix}${e.name}/`)
+      : /\.(jpe?g|png|webp)$/i.test(e.name) ? [{ url: `/img/${prefix}${e.name}`, name: e.name }] : []));
+    return walk(dir, '').sort((a, b) => b.url.split('/').length - a.url.split('/').length || a.url.localeCompare(b.url));
+  };
+  api.get('/media', (req, res) => res.json({ media: [...media.list(), ...bundled()] }));
 
   app.use('/api', api);
 

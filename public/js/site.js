@@ -22,7 +22,7 @@
     };
 
     // Cards, tiles and photos: fade up, staggered within each batch that scrolls into view together.
-    watch(`.prog-card, .news-card, .story-card, .tile, .product, .pillar, .team-member, .venue-card, .prog-row, .vacancy, .funder,
+    watch(`.prog-card, .news-card, .stat, .principle, .story-card, .tile, .product, .pillar, .team-member, .venue-card, .prog-row, .vacancy, .funder,
       .photo-row > *, .about-photos > *, .camp-photos > *, .shop-arch`, { rootMargin: '0px 0px -8% 0px' }, (els) => {
       els.forEach((el, i) => {
         const delay = Math.min(i, 7) * 80;
@@ -30,6 +30,24 @@
         reveal(el, delay + 1000);
       });
     });
+
+    // Impact figures count up from zero, keeping any £, commas and + (e.g. "£982,999", "4,300+").
+    watch('.stat-value', { threshold: 0.6 }, (els) => els.forEach((el) => {
+      const m = /^(\D*)([\d,]+)(.*)$/.exec(el.textContent.trim());
+      if (!m) return;
+      const [, before, digits, after] = m;
+      const target = Number(digits.replace(/,/g, ''));
+      const commas = digits.includes(',');
+      const start = performance.now();
+      const duration = Math.min(1600, 600 + String(target).length * 120);
+      const tick = (t) => {
+        const p = Math.min(1, (t - start) / duration);
+        const n = Math.round(target * (1 - (1 - p) ** 3));
+        el.textContent = before + (commas ? n.toLocaleString('en-GB') : n) + after;
+        if (p < 1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }));
 
     // Journey stops pop in when the drawn line reaches them (both use a point 75% down the screen).
     watch('.stop', { rootMargin: '0px 0px -25% 0px' }, (els) => els.forEach((el) => reveal(el, 1000)));

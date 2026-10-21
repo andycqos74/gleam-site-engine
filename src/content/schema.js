@@ -13,7 +13,7 @@ export const COLOURS = {
 export const STAGES = {
   under5: 'Under 5s',
   primary: 'Primary school',
-  teens: 'Girls & teens',
+  teens: 'Teens & young adults',
   adults: 'Adults & 50+',
 };
 
@@ -30,6 +30,8 @@ export const GALLERY_CATEGORIES = {
   girls: { label: "Girls' Football", colour: 'blue' },
   matchday: { label: 'Matchday', colour: 'navy' },
   tennis: { label: 'Tennis & KGV', colour: 'green' },
+  schools: { label: 'In Schools', colour: 'sky' },
+  community: { label: 'Community', colour: 'orange' },
 };
 
 export const GALLERY_SIZES = { s: 'Small (1×1)', wide: 'Wide (2×1)', tall: 'Tall (1×2)', l: 'Large (2×2)' };
@@ -155,6 +157,22 @@ export const COLLECTIONS = {
       short: { type: 'text', label: 'Description (Contact page)', default: '' },
       colour: { type: 'select', label: 'Colour', options: colourOptions(['navy', 'gold', 'green', 'orange', 'blue']), default: 'navy' },
       mapUrl: { type: 'url', label: 'Map link', default: '' },
+      image: { type: 'image', label: 'Photo (Programmes page)', default: '' },
+    },
+  },
+  stats: {
+    label: 'Impact figure',
+    fields: {
+      value: { type: 'text', label: 'Figure (e.g. 35, 4,300+ or £982,999)', default: '0' },
+      label: { type: 'text', label: 'What it counts', default: 'Label' },
+    },
+  },
+  principles: {
+    label: 'Principle',
+    fields: {
+      title: { type: 'text', label: 'Title', default: 'Principle' },
+      body: { type: 'textarea', label: 'Text', default: '' },
+      colour: { type: 'select', label: 'Colour', options: colourOptions(['gold', 'blue', 'green', 'orange']), default: 'gold' },
     },
   },
   products: {

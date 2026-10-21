@@ -106,7 +106,7 @@ test('an editor can change text, a list item and a link, and change history can 
   const csrf = /name="_csrf" value="([^"]+)"/.exec(history)[1];
   await c(`/admin/history/${revId}/restore`, form({ _csrf: csrf }));
   const restored = await (await fetch(base + '/')).text();
-  assert.match(restored, /bringing football, tennis and community sport/);
+  assert.match(restored, /used the reach of the club to engage, empower and evolve/);
 });
 
 test('bad links and unknown fields are rejected', async () => {
@@ -232,4 +232,43 @@ test('news: published articles show; future-dated ones stay hidden from visitors
   assert.equal((await fetch(`${base}/news/${future}-secret-signing`)).status, 200);
 
   assert.equal((await json('PUT', `/api/items/${live}`, { data: { date: '2026-02-31' } })).status, 400);
+});
+
+test('content update refreshes lists nobody has edited, keeps edited ones, and adds new news', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qos-update-'));
+  const first = createApp({ dataDir: dir });
+  const db = first.locals.db;
+  // Make it look like a site seeded with the old content before this update existed.
+  db.prepare("DELETE FROM meta WHERE key LIKE 'update:2026-10-strategy:%'").run();
+  db.prepare("DELETE FROM items WHERE coll IN ('programmes', 'stories', 'news')").run();
+  const old = (coll, data) => db.prepare("INSERT INTO items (coll, pos, data, updated_at) VALUES (?, 1, ?, '2026-01-01')").run(coll, JSON.stringify(data));
+  old('programmes', { name: 'Old placeholder programme', stage: 'primary' });
+  old('stories', { name: 'A story an editor wrote' });
+  old('news', { title: 'An article an editor wrote', date: '2026-01-01' });
+  db.prepare("INSERT INTO revisions (at, kind, ref, action) VALUES ('2026-01-02', 'item', 'stories:999', 'update')").run();
+  db.close();
+
+  const app = createApp({ dataDir: dir });
+  const s = app.listen(0);
+  await new Promise((r) => s.once('listening', r));
+  const get = async (p) => (await fetch(`http://127.0.0.1:${s.address().port}${p}`)).text();
+  const programmes = await get('/programmes');
+  assert.match(programmes, /Football Development Programme/);
+  assert.doesNotMatch(programmes, /Old placeholder programme/);
+  const home = await get('/');
+  assert.match(home, /A story an editor wrote/, 'edited list kept');
+  assert.doesNotMatch(home, /Why Try participant/);
+  const news = await get('/news');
+  assert.match(news, /An article an editor wrote/);
+  assert.match(news, /Engage, Empower, Evolve: our next chapter/);
+  assert.match(news, /Ali&#39;s journey/);
+  assert.match(home, /£982,999/);
+  s.close();
+  app.locals.db.close();
+
+  // Running again changes nothing (the update is recorded as done).
+  const again = createApp({ dataDir: dir });
+  assert.equal(again.locals.db.prepare("SELECT COUNT(*) AS n FROM items WHERE coll = 'news'").get().n, 5);
+  again.locals.db.close();
+  fs.rmSync(dir, { recursive: true, force: true });
 });

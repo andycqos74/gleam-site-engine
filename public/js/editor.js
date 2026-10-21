@@ -303,8 +303,7 @@
     document.body.append(modal);
     try {
       const { media } = await api('GET', '/api/media');
-      const bundled = ['trust_saturdayclub.jpg', 'trust_wednesdayclub.jpg', 'trust_girlsfootball.jpg', 'match-paton.jpg', 'trust-logo.png', 'qos-crest.png'].map((f) => ({ url: `/img/${f}`, name: f }));
-      grid.replaceChildren(...[...media, ...bundled].map((m) => el('button', {
+      grid.replaceChildren(...media.map((m) => el('button', {
         type: 'button', className: 'ed-thumb', title: m.name,
         onclick: () => { modal.remove(); callback(m.url); },
       }, el('img', { src: m.url.replace(/-1600\.webp$/, '-800.webp'), alt: m.name, loading: 'lazy' }))));
