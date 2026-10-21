@@ -619,6 +619,9 @@ img.shape-circle, img.photo-wide, img.photo-side, img.about-main, img.camp-photo
 .anim .lightbox[open]::backdrop { animation: backdrop-in .3s ease; }
 @keyframes caption-in { from { opacity: 0; translate: 0 8px; } }
 .anim .lightbox[open] .lightbox-caption { animation: caption-in .4s ease .2s both; }
+@keyframes backdrop-out { to { opacity: 0; } }
+.anim .lightbox.closing::backdrop { animation: backdrop-out .34s ease forwards; }
+.anim .lightbox.closing :is(.lightbox-caption, .lb-btn) { opacity: 0; transition: opacity .15s ease; }
 @keyframes menu-in { from { opacity: 0; translate: 0 -10px; scale: .97; } }
 .anim .site-nav.open { animation: menu-in .22s var(--glide); transform-origin: top right; }
 

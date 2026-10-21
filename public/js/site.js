@@ -181,8 +181,36 @@
     });
     dialog.querySelector('.lb-prev').addEventListener('click', () => step(-1));
     dialog.querySelector('.lb-next').addEventListener('click', () => step(1));
-    dialog.querySelector('.lb-close').addEventListener('click', () => dialog.close());
-    dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+    // Closing shrinks the photo back down onto its tile (the one now showing, after any next/previous) while the
+    // backdrop fades. If that tile is scrolled out of view the photo just shrinks and fades.
+    let closing = false;
+    const shut = () => {
+      if (!dialog.open || closing) return;
+      if (!anim) { dialog.close(); return; }
+      closing = true;
+      img.getAnimations().forEach((a) => a.cancel());
+      const from = img.getBoundingClientRect();
+      const to = visible()[current]?.getBoundingClientRect();
+      const onScreen = to && from.width && from.height && to.bottom > 0 && to.top < window.innerHeight;
+      const frames = onScreen
+        ? [
+          { transformOrigin: '0 0', transform: 'none', opacity: 1 },
+          { transformOrigin: '0 0', transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width}, ${to.height / from.height})`, opacity: 0.6 },
+        ]
+        : [{ opacity: 1, scale: 1 }, { opacity: 0, scale: 0.85 }];
+      dialog.classList.add('closing');
+      const a = img.animate(frames, { duration: 340, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' });
+      a.finished.catch(() => {}).then(() => {
+        dialog.close();
+        dialog.classList.remove('closing');
+        a.cancel();
+        closing = false;
+      });
+    };
+    dialog.querySelector('.lb-close').addEventListener('click', shut);
+    dialog.addEventListener('click', (e) => { if (e.target === dialog) shut(); });
+    // Escape: animate instead of the browser's instant close.
+    dialog.addEventListener('cancel', (e) => { e.preventDefault(); shut(); });
     dialog.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowLeft') step(-1);
       if (e.key === 'ArrowRight') step(1);
