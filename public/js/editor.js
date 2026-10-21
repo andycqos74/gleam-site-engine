@@ -362,13 +362,15 @@
     const tools = el('div', { className: 'ed-item-tools ed-ui' }, [
       el('span', { className: 'ed-item-label', textContent: coll.label + (isHidden ? ' (hidden)' : '') }),
       el('button', { type: 'button', title: 'Edit all details', textContent: '✎', onclick: () => openItemDrawer(id) }),
-      el('button', { type: 'button', title: 'Move earlier', textContent: horizontal ? '←' : '↑', onclick: () => structural(async () => { await api('POST', `/api/items/${id}/move`, { dir: -1 }); reload(); }) }),
-      el('button', { type: 'button', title: 'Move later', textContent: horizontal ? '→' : '↓', onclick: () => structural(async () => { await api('POST', `/api/items/${id}/move`, { dir: 1 }); reload(); }) }),
+      // Lists sorted by date (news) have no manual order.
+      coll.sortBy ? null : el('button', { type: 'button', title: 'Move earlier', textContent: horizontal ? '←' : '↑', onclick: () => structural(async () => { await api('POST', `/api/items/${id}/move`, { dir: -1 }); reload(); }) }),
+      coll.sortBy ? null : el('button', { type: 'button', title: 'Move later', textContent: horizontal ? '→' : '↓', onclick: () => structural(async () => { await api('POST', `/api/items/${id}/move`, { dir: 1 }); reload(); }) }),
       el('button', { type: 'button', title: isHidden ? 'Show to visitors' : 'Hide from visitors', textContent: isHidden ? '👁 Show' : '👁', onclick: () => structural(async () => { await api('PUT', `/api/items/${id}`, { data: { hidden: !isHidden } }); reload(); }) }),
       el('button', { type: 'button', title: 'Delete', textContent: '🗑', className: 'ed-danger', onclick: () => structural(async () => {
         if (!confirm(`Delete this ${coll.label.toLowerCase()}? You can put it back from Admin > Change history.`)) return;
         await api('DELETE', `/api/items/${id}`);
-        reload();
+        // On a page that is this item (a news article), go back to the list instead of reloading a missing page.
+        if (item.dataset.afterDelete) { dirtyCount = 0; location.href = item.dataset.afterDelete; } else reload();
       }) }),
     ]);
     item.classList.add('ed-item');
@@ -381,7 +383,9 @@
     const btn = el('button', { type: 'button', className: 'ed-add ed-ui', textContent: `+ Add ${container.dataset.collLabel.toLowerCase()}` });
     btn.addEventListener('click', () => structural(async () => {
       const { id } = await api('POST', '/api/items', { coll: name, data: defaults });
-      reload(`ed-open-${id}`);
+      // A new news article opens on its own page, where its text is written.
+      if (name === 'news') location.href = `/news/${id}#ed-open-${id}`;
+      else reload(`ed-open-${id}`);
     }));
     container.after(btn);
   });
@@ -390,7 +394,11 @@
   function fieldInput(name, f, value) {
     const id = `ed-f-${name}`;
     let input;
-    if (f.type === 'textarea' || f.type === 'rich') input = el('textarea', { id, name, value: value ?? '', rows: 4 });
+    if (f.type === 'rich') {
+      return el('div', { className: 'ed-field' }, [el('span', { className: 'ed-label', textContent: f.label }), el('p', { className: 'ed-help', textContent: 'Edit this on the page itself: click the text and use the formatting bar.' })]);
+    }
+    if (f.type === 'textarea') input = el('textarea', { id, name, value: value ?? '', rows: 4 });
+    else if (f.type === 'date') input = el('input', { id, name, type: 'date', value: value ?? '', required: true });
     else if (f.type === 'select') {
       input = el('select', { id, name }, Object.entries(f.options).map(([v, label]) => el('option', { value: v, textContent: label, selected: v === value })));
     } else if (f.type === 'bool') {
@@ -429,6 +437,7 @@
       const data = {};
       for (const [n, f] of Object.entries(fields)) {
         const input = form.elements[n];
+        if (!input) continue;
         data[n] = f.type === 'bool' ? input.checked : input.value;
       }
       try { await onSave(data); } catch (err) { toast(err.message, { error: true }); }

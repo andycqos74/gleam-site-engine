@@ -140,6 +140,17 @@ export const FIELDS = {
   'contact.venues.title': t('Find our venues'),
 
   // Privacy
+  // News
+  'meta.news.title': t('News | QoS Community Trust'),
+  'meta.news.description': t('The latest from QoS Community Trust: camps, clubs, matchdays and community sport in Dumfries & Galloway.'),
+  'news.hero.title': h("What's [new]"),
+  'news.hero.sub': p('Camps, clubs, matchdays and everything else happening across the Trust.'),
+  'news.empty': p('No news just now. Check back soon.'),
+  'home.news.eyebrow': t('News'),
+  'home.news.title': t('Latest from the Trust'),
+  'home.news.link': t('All News →'),
+  'home.news.link.url': u('/news'),
+
   'meta.privacy.title': t('Privacy Policy | QoS Community Trust'),
   'meta.privacy.description': t('How QoS Community Trust (KGV Trust SCIO) uses personal information.'),
   'privacy.title': t('Privacy Policy'),
@@ -159,6 +170,9 @@ const prog = (name, typeTag, stage, blurb, when, where, price, image, featured, 
   ({ name, typeTag, stage, blurb, when, where, price, image, featured, homeTag });
 
 export const SEED = {
+  news: [
+    { title: 'Welcome to our new website', tag: 'News', date: 'today', summary: "Find every programme, camp and club in one place, with news from across the Trust posted here.", body: "<p>Welcome to the new home of QoS Community Trust online. You can find every programme we run, from soft play to walking football, on the <a href=\"/programmes\">Programmes</a> page, and keep up with camps, clubs and matchdays right here.</p><p>Questions about anything you see? <a href=\"/contact\">Get in touch</a>.</p>" },
+  ],
   journey: [
     { stage: 'Wee Ones', ages: 'Under 5s', colour: 'gold', link: '/programmes?age=under5', short: 'Soft play and parties at Lochmaben', blurb: 'First steps, first bounces and plenty of noise at Lochmaben Community Centre.', chips: 'Soft Play, Birthday Parties' },
     { stage: 'Kids', ages: 'Primary school', colour: 'orange', link: '/programmes?age=primary', short: 'Camps, clubs and matchday fun', blurb: 'Coached football before school, after school, on matchdays and all through the holidays.', chips: 'Soccer Camps, Saturday Club, Wednesday Club, After School, Breakfast Club' },

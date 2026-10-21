@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb, now } from './db.js';
 import { createStore, ValidationError } from './content/store.js';
-import { COLLECTIONS, CONTACT_TOPICS } from './content/schema.js';
+import { COLLECTIONS, CONTACT_TOPICS, isScheduled } from './content/schema.js';
 import { createAuth, hashPassword, verifyPassword, passwordProblem, randomPassword } from './auth.js';
 import { createMedia } from './media.js';
 import { createMailer } from './mail.js';
@@ -17,6 +17,7 @@ import { shop } from './pages/shop.js';
 import { gallery } from './pages/gallery.js';
 import { contact } from './pages/contact.js';
 import { privacy } from './pages/privacy.js';
+import { newsPage, articlePage, articleUrl } from './pages/news.js';
 import * as admin from './pages/admin.js';
 import { raw } from './html.js';
 
@@ -28,6 +29,7 @@ const PAGES = {
   '/about': ['about', about],
   '/programmes': ['programmes', programmes],
   '/shop': ['shop', shop],
+  '/news': ['news', newsPage],
   '/gallery': ['gallery', gallery],
   '/contact': ['contact', contact],
   '/privacy': ['privacy', privacy],
@@ -109,6 +111,24 @@ export function createApp(config) {
 
   app.get('/contact', (req, res) => renderPage(req, res, '/contact', { sent: req.query.sent === '1', topic: req.query.topic }));
 
+  // One news article: /news/<id>-<slug>. Hidden or future-dated articles are only visible to signed-in editors.
+  app.get('/news/:slug', (req, res, next) => {
+    const id = Number.parseInt(req.params.slug, 10);
+    const article = Number.isFinite(id) ? store.getItem(id) : null;
+    const ctx = context(req);
+    if (!article || article.coll !== 'news' || (!ctx.user && (article.hidden || isScheduled(article)))) return next();
+    const url = articleUrl(article);
+    if (req.path !== url) return res.redirect(301, url);
+    const k = createKit(ctx);
+    res.set('Cache-Control', req.user ? 'private, no-store' : 'public, max-age=0, must-revalidate');
+    res.type('html').send(String(layout(ctx, k, {
+      page: 'news',
+      body: articlePage(k, { article }),
+      bodyClass: 'page-article',
+      meta: { title: `${article.title} | ${ctx.fields['site.name']}`, description: article.summary, image: article.image, type: 'article' },
+    })));
+  });
+
   // Contact form: works as a normal form post, and as fetch() from site.js (Accept: application/json).
   const contactHits = new Map();
   app.post('/contact', async (req, res) => {
@@ -151,7 +171,8 @@ export function createApp(config) {
   app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /api\n${config.baseUrl ? `Sitemap: ${config.baseUrl}/sitemap.xml\n` : ''}`));
   app.get('/sitemap.xml', (req, res) => {
     const base = config.baseUrl || `${req.protocol}://${req.get('host')}`;
-    res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${Object.keys(PAGES).map((p) => `  <url><loc>${base}${p}</loc></url>`).join('\n')}\n</urlset>\n`);
+    const urls = [...Object.keys(PAGES), ...store.items('news').map(articleUrl)];
+    res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((p) => `  <url><loc>${base}${p}</loc></url>`).join('\n')}\n</urlset>\n`);
   });
 
   // ---------- admin ----------

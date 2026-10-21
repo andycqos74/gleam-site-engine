@@ -1,4 +1,6 @@
 import { html, attrs } from '../html.js';
+import { isScheduled } from '../content/schema.js';
+import { newsCards } from './news.js';
 
 // Colour-block programme cards on the homepage cycle through this sequence (from the design).
 const CARD_STYLES = [
@@ -38,6 +40,10 @@ export function timeline(k, { variant }) {
 export function home(k) {
   const featured = k.items('programmes').filter((p) => p.featured);
   const stories = k.items('stories');
+  // The three latest published articles; editors also see what's scheduled so they can check it.
+  const allNews = k.items('news');
+  const liveNews = allNews.filter((a) => !a.hidden && !isScheduled(a)).slice(0, 3);
+  const news = k.ed ? [...allNews.filter((a) => !a.hidden && isScheduled(a)), ...liveNews] : liveNews;
 
   return html`
 <section class="hero hero-center">
@@ -77,6 +83,14 @@ export function home(k) {
       </div>`, { cls: `prog-card card-${bg}`, attrs: { style: `--tilt:${tilt}` } });
   }), { cls: 'prog-grid', attrs: { 'data-coll-defaults': k.ed ? JSON.stringify({ featured: true }) : null } })}
 </section>
+
+${news.length || k.ed ? html`<section class="section section-news">
+  <div class="section-head split">
+    <div>${k.text('home.news.eyebrow', { cls: 'eyebrow eyebrow-blue' })}${k.text('home.news.title', { tag: 'h2', cls: 'h-section' })}</div>
+    ${k.link('home.news.link', { cls: 'more-link' })}
+  </div>
+  ${newsCards(k, news)}
+</section>` : ''}
 
 ${stories.length || k.ed ? html`<section class="band band-gold">
   <div class="section-head split">

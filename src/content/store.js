@@ -1,6 +1,6 @@
 import sanitizeHtml from 'sanitize-html';
 import { FIELDS, SEED } from './defaults.js';
-import { COLLECTIONS, itemDefaults } from './schema.js';
+import { COLLECTIONS, itemDefaults, isScheduled, todayInUK } from './schema.js';
 import { now } from '../db.js';
 
 export class ValidationError extends Error {}
@@ -40,6 +40,13 @@ export function cleanValue(field, v) {
     }
     case 'select': return Object.hasOwn(field.options, v) ? v : field.default;
     case 'bool': return v === true || v === 'true' || v === 'on' || v === 1;
+    case 'date': {
+      const d = String(v ?? '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(`${d}T00:00:00Z`)) || new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) !== d) {
+        throw new ValidationError('Enter a date such as 2026-11-05.');
+      }
+      return d;
+    }
     default: throw new ValidationError(`Unknown field type ${field.type}`);
   }
 }
@@ -53,7 +60,7 @@ export function createStore(db) {
       if (db.prepare('SELECT 1 FROM meta WHERE key = ?').get(key)) continue;
       items.forEach((data, i) => {
         db.prepare('INSERT INTO items (coll, pos, data, updated_at) VALUES (?, ?, ?, ?)')
-          .run(coll, i + 1, JSON.stringify({ ...itemDefaults(coll), ...data }), now());
+          .run(coll, i + 1, JSON.stringify({ ...itemDefaults(coll), ...data, ...(data.date === 'today' ? { date: todayInUK() } : {}) }), now());
       });
       db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run(key, now());
     }
@@ -80,9 +87,11 @@ export function createStore(db) {
     return { id: row.id, coll: row.coll, pos: row.pos, ...data };
   };
 
+  // Visitors don't see hidden items, or news dated in the future; editors (includeHidden) see everything.
   function items(coll, { includeHidden = false } = {}) {
     const rows = db.prepare('SELECT * FROM items WHERE coll = ? ORDER BY pos, id').all(coll).map(parseItem);
-    return includeHidden ? rows : rows.filter((i) => !i.hidden);
+    if (COLLECTIONS[coll]?.sortBy === 'date') rows.sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.id - a.id);
+    return includeHidden ? rows : rows.filter((i) => !i.hidden && !isScheduled(i));
   }
 
   function getItem(id) {

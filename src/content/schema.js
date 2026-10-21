@@ -37,12 +37,33 @@ export const GALLERY_SHAPES = { rect: 'Rounded rectangle', circle: 'Circle', arc
 
 export const CONTACT_TOPICS = ['Programmes', 'Bookings', 'Parties', 'Volunteering', 'Partnerships'];
 
+// News articles with a publish date in the future stay hidden from visitors until that day (UK time).
+export function todayInUK(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+}
+export const isScheduled = (item, today = todayInUK()) => !!item.date && item.date > today;
+export const formatDate = (iso) => (iso ? new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '');
+export const slugify = (s) => String(s ?? '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'article';
+
 const colourOptions = (keys) => Object.fromEntries(keys.map((k) => [k, COLOURS[k].label]));
 const mapOptions = (obj) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, typeof v === 'string' ? v : v.label]));
 
 // Field types: text (one line), textarea (plain text, line breaks kept), rich (bold/italic/links/lists),
-// url, image, select (options), bool, list (comma-separated words shown as chips).
+// url, image, select (options), bool, list (comma-separated words shown as chips), date (YYYY-MM-DD).
+// sortBy: 'date' lists newest first by the "date" field instead of the order editors arrange.
 export const COLLECTIONS = {
+  news: {
+    label: 'News article',
+    sortBy: 'date',
+    fields: {
+      title: { type: 'text', label: 'Headline', default: 'New article' },
+      date: { type: 'date', label: 'Publish date (visitors see it from this day; a future date keeps it hidden until then)', default: 'today' },
+      tag: { type: 'text', label: 'Tag (e.g. News, Camps, Matchday)', default: 'News' },
+      summary: { type: 'textarea', label: 'Summary (shown on the cards)', default: '' },
+      image: { type: 'image', label: 'Photo', default: '' },
+      body: { type: 'rich', label: 'Article text', default: '<p>Write the article here.</p>' },
+    },
+  },
   journey: {
     label: 'Journey stop',
     fields: {
@@ -164,5 +185,5 @@ export const COLLECTIONS = {
 for (const c of Object.values(COLLECTIONS)) c.fields.hidden = { type: 'bool', label: 'Hide from visitors', default: false };
 
 export function itemDefaults(coll) {
-  return Object.fromEntries(Object.entries(COLLECTIONS[coll].fields).map(([k, f]) => [k, f.default]));
+  return Object.fromEntries(Object.entries(COLLECTIONS[coll].fields).map(([k, f]) => [k, f.type === 'date' && f.default === 'today' ? todayInUK() : f.default]));
 }

@@ -93,8 +93,9 @@ export function createKit(ctx) {
     const v = it[field];
     if (!v && !ed && !keepEmpty) return '';
     const T = tagOf(tag);
-    const editType = type === 'textarea' ? 'textarea' : 'text';
-    return html`<${T}${attrs({ class: cls, 'data-f': ed && field, 'data-type': ed && editType, 'data-placeholder': ed && COLLECTIONS[it.coll].fields[field].label, ...extra })}>${type === 'textarea' ? lines(v) : v}</${T}>`;
+    const editType = type === 'textarea' || type === 'rich' ? type : 'text';
+    const content = type === 'rich' ? raw(v) : type === 'textarea' ? lines(v) : v;
+    return html`<${T}${attrs({ class: cls, 'data-f': ed && field, 'data-type': ed && editType, 'data-placeholder': ed && COLLECTIONS[it.coll].fields[field].label, ...extra })}>${content}</${T}>`;
   }
 
   function FI(it, field, { cls, sizes, altField } = {}) {

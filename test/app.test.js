@@ -197,3 +197,39 @@ test('ADMIN_RESET puts the administrator password back, and quotes around it are
   app.locals.db.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('news: published articles show; future-dated ones stay hidden from visitors until their date', async () => {
+  const { c, json } = await signedIn();
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
+  const live = (await (await json('POST', '/api/items', { coll: 'news', data: { title: 'Camp places open', date: today, summary: 'Book now' } })).json()).id;
+  const future = (await (await json('POST', '/api/items', { coll: 'news', data: { title: 'Secret signing', date: '2099-01-01' } })).json()).id;
+
+  const home = await (await fetch(base + '/')).text();
+  assert.match(home, /Camp places open/);
+  assert.doesNotMatch(home, /Secret signing/);
+  const list = await (await fetch(base + '/news')).text();
+  assert.match(list, /Camp places open/);
+  assert.doesNotMatch(list, /Secret signing/);
+  assert.equal((await fetch(`${base}/news/${future}-secret-signing`)).status, 404);
+  assert.doesNotMatch(await (await fetch(base + '/sitemap.xml')).text(), /secret-signing/);
+
+  // The article page, and a link with an out-of-date slug redirects to the current one
+  const page = await fetch(`${base}/news/${live}-camp-places-open`);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /<meta property="og:type" content="article">/);
+  const old = await fetch(`${base}/news/${live}-old-title`, { redirect: 'manual' });
+  assert.equal(old.status, 301);
+  assert.equal(old.headers.get('location'), `/news/${live}-camp-places-open`);
+
+  // Editors see the scheduled article, flagged
+  const editing = await (await c('/news')).text();
+  assert.match(editing, /Secret signing/);
+  assert.match(editing, /Scheduled: visitors see this from 1 January 2099/);
+  assert.equal((await c(`/news/${future}-secret-signing`)).status, 200);
+
+  // Bringing the date forward publishes it
+  await json('PUT', `/api/items/${future}`, { data: { date: today } });
+  assert.equal((await fetch(`${base}/news/${future}-secret-signing`)).status, 200);
+
+  assert.equal((await json('PUT', `/api/items/${live}`, { data: { date: '2026-02-31' } })).status, 400);
+});

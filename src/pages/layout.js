@@ -6,6 +6,7 @@ const NAV = [
   ['About', '/about', 'about'],
   ['Programmes', '/programmes', 'programmes'],
   ['Journeys', '/#journeys', 'journeys'],
+  ['News', '/news', 'news'],
   ['Gallery', '/gallery', 'gallery'],
   ['Shop', '/shop', 'shop'],
   ['Contact', '/contact', 'contact'],
@@ -14,10 +15,12 @@ const NAV = [
 // JSON inside <script type="application/json"> must not be able to close the tag.
 const safeJson = (v) => raw(JSON.stringify(v).replace(/</g, '\\u003c'));
 
-export function layout(ctx, k, { page, body, bodyClass }) {
+// meta (optional) overrides the page's title, description and share image, e.g. for a news article.
+export function layout(ctx, k, { page, body, bodyClass, meta = {} }) {
   const f = ctx.fields;
-  const title = f[`meta.${page}.title`] ?? f['site.name'];
-  const description = f[`meta.${page}.description`] ?? '';
+  const title = meta.title ?? f[`meta.${page}.title`] ?? f['site.name'];
+  const description = meta.description ?? f[`meta.${page}.description`] ?? '';
+  const shareImage = meta.image || '/img/trust-logo.png';
   const canonical = ctx.baseUrl ? ctx.baseUrl + ctx.path : null;
   const pageFields = Object.keys(FIELDS).filter((key) => key.startsWith(`meta.${page}.`) || (page === 'contact' && key.startsWith('contact.map.')) || (page === 'programmes' && key === 'links.booking') || (page === 'gallery' && key.startsWith('links.')));
 
@@ -31,8 +34,8 @@ export function layout(ctx, k, { page, body, bodyClass }) {
 ${canonical ? html`<link rel="canonical" href="${canonical}">` : ''}
 <meta property="og:title" content="${title}">
 <meta property="og:description" content="${description}">
-<meta property="og:type" content="website">
-${ctx.baseUrl ? html`<meta property="og:image" content="${ctx.baseUrl}/img/trust-logo.png">` : ''}
+<meta property="og:type" content="${meta.type ?? 'website'}">
+${ctx.baseUrl ? html`<meta property="og:image" content="${ctx.baseUrl}${shareImage}">` : ''}
 <link rel="icon" href="/img/trust-logo.png">
 <link rel="preload" href="/fonts/bricolage-grotesque-latin-800-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/fonts/figtree-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>

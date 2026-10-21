@@ -1,7 +1,7 @@
 # QoS Community Trust website
 
-The six-page "Winding Route" site from the design handover (Home, About, Programmes, Shop, Gallery, Contact, plus a
-Privacy page). Approved staff edit the words and photos **in place on the page** after signing in, and every change is
+The six-page "Winding Route" site from the design handover (Home, About, Programmes, Shop, Gallery, Contact), plus
+News (with a page per article) and Privacy. Approved staff edit the words and photos **in place on the page** after signing in, and every change is
 recorded, so any change can be undone.
 
 ## Stack
@@ -36,8 +36,13 @@ deploy/portainer          Portainer stack and its variables
 6. **Lists** (programmes, journey stops, stories, timeline, team, vacancies, funders, venues, shop products, gallery):
    point at an item for its toolbar: ✎ all details (price, age group, links, "show on homepage", …), arrows to
    reorder, 👁 to hide from visitors, 🗑 to delete. **+ Add …** under a list adds a new item.
-7. Press **Save changes**. Visitors see the change immediately.
-8. **Page settings** (in the bar) holds the search-engine title and description, plus a few links such as the default
+7. **News:** press **+ Add news article** (homepage or News page). The new article opens on its own page: set the
+   headline, **publish date**, tag and summary in the panel, then click the article text to write it (the bar above
+   it does bold, italic, headings, lists and links). An article with a future publish date stays hidden from
+   visitors until that day (UK time) and shows a *Scheduled* badge to editors. The homepage shows the three latest;
+   the News page shows them all, newest first.
+8. Press **Save changes**. Visitors see the change immediately.
+9. **Page settings** (in the bar) holds the search-engine title and description, plus a few links such as the default
    *Book Now* address, Facebook/Instagram addresses and the map position.
 
 Made a mistake? **Admin → Change history** lists every change with a *Put back* button.

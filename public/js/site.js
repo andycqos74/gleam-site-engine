@@ -22,7 +22,7 @@
     };
 
     // Cards, tiles and photos: fade up, staggered within each batch that scrolls into view together.
-    watch(`.prog-card, .story-card, .tile, .product, .pillar, .team-member, .venue-card, .prog-row, .vacancy, .funder,
+    watch(`.prog-card, .news-card, .story-card, .tile, .product, .pillar, .team-member, .venue-card, .prog-row, .vacancy, .funder,
       .photo-row > *, .about-photos > *, .camp-photos > *, .shop-arch`, { rootMargin: '0px 0px -8% 0px' }, (els) => {
       els.forEach((el, i) => {
         const delay = Math.min(i, 7) * 80;

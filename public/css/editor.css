@@ -77,6 +77,7 @@ body:has(.ed-drawer) .admin-bar { display: none; }
 .ed-field { display: flex; flex-direction: column; gap: 6px; }
 .ed-label { font-size: 14px; font-weight: 800; color: var(--navy); }
 .ed-field input, .ed-field textarea, .ed-field select { font: inherit; font-size: 15px; padding: 10px 12px; border: 2px solid var(--navy); border-radius: 12px; background: #fff; color: var(--ink); width: 100%; }
+.ed-help { font-size: 14px; color: var(--muted); background: var(--sky); border-radius: 10px; padding: 8px 12px; margin: 0; }
 .ed-check { display: flex; gap: 8px; align-items: center; font-weight: 700; font-size: 15px; }
 .ed-check input { width: 20px; height: 20px; }
 .ed-preview { height: 140px; border-radius: 12px; background: var(--stripe); display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--muted); font-size: 13px; }
