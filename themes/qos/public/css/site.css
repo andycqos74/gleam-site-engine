@@ -711,3 +711,14 @@ img.shape-circle, img.photo-wide, img.photo-side, img.about-main, img.camp-photo
   .anim .timeline::before { transform-origin: top; scale: 1 0; }
   .anim .timeline.shown::before { scale: 1 1; }
 }
+
+/* ---------- Edit mode ----------
+   Adjustments to this theme while an editor is working (html.is-editing). The editing tools themselves are styled
+   by the engine (/_engine/editor.css). */
+.is-editing .band-blue .ed-text, .is-editing .panel .ed-text, .is-editing .band-navy .ed-text { outline-color: rgba(246, 198, 53, .6); }
+.is-editing .stretch::after { display: none; }
+.is-editing .tile { overflow: visible; }
+.is-editing .tile .tile-img { border-radius: inherit; }
+.is-editing .tile-circle .ed-item-tools, .is-editing .tile-archTop .ed-item-tools { right: 50%; transform: translateX(50%); }
+.is-editing .prog-card:hover { transform: rotate(var(--tilt, 0deg)); }
+.band-blue .ed-add, .band-navy .ed-add, .panel .ed-add { border-color: #fff; }

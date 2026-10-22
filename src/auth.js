@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { now } from './db.js';
 
 const SESSION_DAYS = 14;
-const COOKIE = 'qos_sid';
+const COOKIE = 'site_sid';
 
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16);

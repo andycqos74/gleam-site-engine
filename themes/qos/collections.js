@@ -1,5 +1,5 @@
-// What editors can change. Single fields live in defaults.js; this file describes the repeatable lists
-// ("collections") such as programmes and gallery photos, and the fixed choices their dropdowns offer.
+// The QoS theme's editable lists ("collections") such as programmes and gallery photos, and the fixed choices
+// their dropdowns offer. Single fields are in content.js.
 
 export const COLOURS = {
   gold: { label: 'Gold', bg: '#f6c635', ink: '#14173a' },
@@ -39,24 +39,19 @@ export const GALLERY_SHAPES = { rect: 'Rounded rectangle', circle: 'Circle', arc
 
 export const CONTACT_TOPICS = ['Programmes', 'Bookings', 'Parties', 'Volunteering', 'Partnerships'];
 
-// News articles with a publish date in the future stay hidden from visitors until that day (UK time).
-export function todayInUK(now = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
-}
-export const isScheduled = (item, today = todayInUK()) => !!item.date && item.date > today;
-export const formatDate = (iso) => (iso ? new Date(`${iso}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '');
-export const slugify = (s) => String(s ?? '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'article';
-
 const colourOptions = (keys) => Object.fromEntries(keys.map((k) => [k, COLOURS[k].label]));
 const mapOptions = (obj) => Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, typeof v === 'string' ? v : v.label]));
 
-// Field types: text (one line), textarea (plain text, line breaks kept), rich (bold/italic/links/lists),
-// url, image, select (options), bool, list (comma-separated words shown as chips), date (YYYY-MM-DD).
-// sortBy: 'date' lists newest first by the "date" field instead of the order editors arrange.
+// Each list: label, fields ({ type, label, default, options }) and optionally
+//   sortBy: '<field>'      newest first by that field, instead of the order editors arrange
+//   publishDate: '<field>' items are hidden from visitors until that date
+//   itemPage               a page per item (set in theme.js)
+// Field types are listed in src/content/types.js. Every list also gets a "Hide from visitors" switch.
 export const COLLECTIONS = {
   news: {
     label: 'News article',
     sortBy: 'date',
+    publishDate: 'date',
     fields: {
       title: { type: 'text', label: 'Headline', default: 'New article' },
       date: { type: 'date', label: 'Publish date (visitors see it from this day; a future date keeps it hidden until then)', default: 'today' },
@@ -198,10 +193,3 @@ export const COLLECTIONS = {
     },
   },
 };
-
-// Every item can be hidden from visitors without deleting it.
-for (const c of Object.values(COLLECTIONS)) c.fields.hidden = { type: 'bool', label: 'Hide from visitors', default: false };
-
-export function itemDefaults(coll) {
-  return Object.fromEntries(Object.entries(COLLECTIONS[coll].fields).map(([k, f]) => [k, f.type === 'date' && f.default === 'today' ? todayInUK() : f.default]));
-}

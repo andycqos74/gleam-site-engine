@@ -1,17 +1,18 @@
-// Building blocks for page templates. Each helper renders plain HTML for visitors; when an approved user is in
-// edit mode it adds data-* markers that public/js/editor.js turns into in-place editors.
-//   data-k="key"      a single field (see content/defaults.js)
-//   data-f="field"    a field of the list item it sits in (data-item / data-id), see content/schema.js
+// The toolkit every theme template gets as "k". Each helper renders plain HTML for visitors; when an approved
+// user is in edit mode it adds data-* markers that public/editor.js turns into in-place editors.
+//   data-k="key"      a single field (theme.fields)
+//   data-f="field"    a field of the list item it sits in (data-item / data-id), see theme.collections
 //   data-type         how it is edited: text, textarea, headline, rich, image
 //   data-coll         a container whose children are list items, so the editor can add to it
 
-import { FIELDS } from '../content/defaults.js';
-import { COLLECTIONS, COLOURS } from '../content/schema.js';
-import { html, raw, attrs, esc } from '../html.js';
-import { srcset } from '../media.js';
+import { html, raw, attrs, esc } from './html.js';
+import { srcset } from './media.js';
+import { formatDate, slugify } from './content/types.js';
 
 const lines = (s) => raw(esc(s).replace(/\n/g, '<br>'));
 
+// Headline fields mark highlighted words with [square brackets]; they render as
+// <span class="pill pill-<colour> pill-a|pill-b"> for the theme to style.
 export function pillsHtml(value, colours) {
   let n = 0;
   return raw(esc(value).replace(/\[([^\]]+)\]/g, (_, word) => {
@@ -20,13 +21,14 @@ export function pillsHtml(value, colours) {
   }));
 }
 
-export function colour(name) {
-  return COLOURS[name] ?? COLOURS.gold;
-}
-
 export function createKit(ctx) {
+  const { theme } = ctx;
+  const FIELDS = theme.fields;
+  const COLLECTIONS = theme.collections;
   const ed = ctx.editing;
   const f = ctx.fields;
+  // Theme colour names (theme.colours) to { bg, ink, label }; unknown names fall back to the first colour.
+  const colour = (name) => theme.colours[name] ?? Object.values(theme.colours)[0] ?? { bg: '#000', ink: '#fff', label: name };
   const tagOf = (t) => raw(/^[a-z][a-z0-9]*$/.test(t) ? t : 'span');
 
   const value = (key) => {
@@ -112,5 +114,21 @@ export function createKit(ctx) {
     return html`<a${attrs({ href: url, class: cls, rel: /^https?:/i.test(url) ? 'noopener' : null, 'data-f': ed && labelField, 'data-type': ed && labelField && 'text', 'data-link-f': ed && urlField })}>${words}</a>`;
   }
 
-  return { ed, value, text, headline, rich, link, image, img, coll, item, F, FI, FL, items: ctx.items, colour };
+  // ---- items with their own page (collection.itemPage) and scheduled publishing (collection.publishDate) ----
+  const itemUrl = (it) => {
+    const page = COLLECTIONS[it.coll]?.itemPage;
+    return page ? `${page.base}/${it.id}-${slugify(it[page.titleField ?? 'title'])}` : null;
+  };
+  const scheduled = (it) => ctx.scheduled(it);
+  // A badge editors see on hidden or not-yet-published items. Visitors never see these items at all.
+  const status = (it) => {
+    if (!ed) return '';
+    if (it.hidden) return html`<span class="ed-status">Hidden from visitors</span>`;
+    const dateField = COLLECTIONS[it.coll]?.publishDate;
+    if (scheduled(it)) return html`<span class="ed-status ed-status-scheduled">Scheduled: visitors see this from ${formatDate(it[dateField], theme.lang)}</span>`;
+    return '';
+  };
+  const date = (iso) => formatDate(iso, theme.lang);
+
+  return { ed, user: ctx.user, path: ctx.path, query: ctx.query, value, text, headline, rich, link, image, img, coll, item, F, FI, FL, items: ctx.items, colour, itemUrl, scheduled, status, date };
 }

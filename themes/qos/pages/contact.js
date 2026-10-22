@@ -1,5 +1,5 @@
-import { html, attrs } from '../html.js';
-import { CONTACT_TOPICS } from '../content/schema.js';
+import { html, attrs } from '../../../src/theme-api.js';
+import { CONTACT_TOPICS } from '../collections.js';
 
 export function contact(k, { form = {}, errors = {}, sent = false, topic } = {}) {
   const f = k.value;

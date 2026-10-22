@@ -5,13 +5,18 @@ import os from 'node:os';
 import path from 'node:path';
 import sharp from 'sharp';
 import { createApp } from '../src/app.js';
-import { cleanUrl, cleanValue } from '../src/content/store.js';
+import { loadTheme } from '../src/theme.js';
+import { cleanUrl, cleanValue } from '../src/content/types.js';
+
+// The engine running the QoS theme: its pages, content and the in-place editing API.
+const qos = await loadTheme({ theme: 'qos' });
+const make = (config) => createApp({ themeObject: qos, ...config });
 
 let server; let base; let dataDir;
 
 before(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'qos-test-'));
-  const app = createApp({ dataDir, adminEmail: 'admin@example.com', adminPassword: 'CorrectHorse99', cookieSecure: false });
+  const app = make({ dataDir, adminEmail: 'admin@example.com', adminPassword: 'CorrectHorse99', cookieSecure: false });
   server = app.listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -86,7 +91,7 @@ test('an editor can change text, a list item and a link, and change history can 
   const { c, json } = await signedIn();
   const editing = await (await c('/')).text();
   assert.match(editing, /data-k="home.hero.sub"/);
-  assert.match(editing, /<html lang="en-GB" class="no-anim">/, 'animations are off while editing');
+  assert.match(editing, /<html lang="en-GB" class="is-editing">/, 'edit mode is marked on <html> (the theme switches animations off)');
   assert.match(await (await fetch(base + '/')).text(), /<html lang="en-GB">[\s\S]*\/js\/anim-init\.js/);
   const journeyId = /data-item="journey" data-id="(\d+)"/.exec(editing)[1];
 
@@ -187,8 +192,8 @@ test('admins can add editors, who must choose their own password first', async (
 test('ADMIN_RESET puts the administrator password back, and quotes around it are ignored', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qos-reset-'));
   const { loadConfig } = await import('../src/config.js');
-  createApp(loadConfig({ DATA_DIR: dir, ADMIN_EMAIL: 'boss@example.com', ADMIN_PASSWORD: 'FirstPassword1' })).locals.db.close();
-  const app = createApp(loadConfig({ DATA_DIR: dir, ADMIN_EMAIL: 'boss@example.com', ADMIN_PASSWORD: '"SecondPassword2"', ADMIN_RESET: 'true', COOKIE_SECURE: 'false' }));
+  make(loadConfig({ DATA_DIR: dir, ADMIN_EMAIL: 'boss@example.com', ADMIN_PASSWORD: 'FirstPassword1' })).locals.db.close();
+  const app = make(loadConfig({ DATA_DIR: dir, ADMIN_EMAIL: 'boss@example.com', ADMIN_PASSWORD: '"SecondPassword2"', ADMIN_RESET: 'true', COOKIE_SECURE: 'false' }));
   const s = app.listen(0);
   await new Promise((r) => s.once('listening', r));
   const res = await fetch(`http://127.0.0.1:${s.address().port}/admin/login`, { ...form({ email: 'boss@example.com', password: 'SecondPassword2' }), redirect: 'manual' });
@@ -236,7 +241,7 @@ test('news: published articles show; future-dated ones stay hidden from visitors
 
 test('content update refreshes lists nobody has edited, keeps edited ones, and adds new news', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qos-update-'));
-  const first = createApp({ dataDir: dir });
+  const first = make({ dataDir: dir });
   const db = first.locals.db;
   // Make it look like a site seeded with the old content before this update existed.
   db.prepare("DELETE FROM meta WHERE key LIKE 'update:2026-10-strategy:%'").run();
@@ -248,7 +253,7 @@ test('content update refreshes lists nobody has edited, keeps edited ones, and a
   db.prepare("INSERT INTO revisions (at, kind, ref, action) VALUES ('2026-01-02', 'item', 'stories:999', 'update')").run();
   db.close();
 
-  const app = createApp({ dataDir: dir });
+  const app = make({ dataDir: dir });
   const s = app.listen(0);
   await new Promise((r) => s.once('listening', r));
   const get = async (p) => (await fetch(`http://127.0.0.1:${s.address().port}${p}`)).text();
@@ -267,7 +272,7 @@ test('content update refreshes lists nobody has edited, keeps edited ones, and a
   app.locals.db.close();
 
   // Running again changes nothing (the update is recorded as done).
-  const again = createApp({ dataDir: dir });
+  const again = make({ dataDir: dir });
   assert.equal(again.locals.db.prepare("SELECT COUNT(*) AS n FROM items WHERE coll = 'news'").get().n, 5);
   again.locals.db.close();
   fs.rmSync(dir, { recursive: true, force: true });

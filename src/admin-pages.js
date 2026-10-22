@@ -1,6 +1,6 @@
-import { html, attrs, paragraphs } from '../html.js';
-import { FIELDS } from '../content/defaults.js';
-import { COLLECTIONS } from '../content/schema.js';
+// Admin screens (sign-in, messages, history, people, account). They use only the engine's stylesheet
+// (/_engine/editor.css, scoped under .admin-page), so they look the same whatever theme a site runs.
+import { html, attrs, paragraphs } from './html.js';
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/London' }) : '');
 const csrfInput = (ctx) => html`<input type="hidden" name="_csrf" value="${ctx.csrf}">`;
@@ -8,19 +8,18 @@ const csrfInput = (ctx) => html`<input type="hidden" name="_csrf" value="${ctx.c
 export function adminLayout(ctx, { title, body, nav = true }) {
   const u = ctx.user;
   return html`<!doctype html>
-<html lang="en-GB">
+<html lang="${ctx.theme?.lang ?? 'en-GB'}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>${title} | Site admin</title>
-<link rel="icon" href="/img/trust-logo.png">
-<link rel="stylesheet" href="/css/site.css?v=${ctx.version}">
-<link rel="stylesheet" href="/css/editor.css?v=${ctx.version}">
+${ctx.logo ? html`<link rel="icon" href="${ctx.logo}">` : ''}
+<link rel="stylesheet" href="/_engine/editor.css?v=${ctx.version}">
 </head>
 <body class="admin-page">
 <header class="admin-header">
-  <a class="brand" href="/"><img class="brand-logo" src="/img/trust-logo.png" alt=""><span class="brand-words"><span class="brand-name">Site admin</span><span class="brand-tag">QoS Community Trust</span></span></a>
+  <a class="brand" href="/">${ctx.logo ? html`<img class="brand-logo" src="${ctx.logo}" alt="">` : ''}<span class="brand-words"><span class="brand-name">Site admin</span><span class="brand-tag">${ctx.siteName}</span></span></a>
   ${nav && u ? html`<nav class="admin-nav">
     <a href="/admin">Home</a>
     <a href="/admin/messages">Messages</a>
@@ -64,7 +63,7 @@ export function dashboard(ctx, { unread }) {
   <div class="admin-card">
     <h2>Edit the website</h2>
     <p>Go to any page and press <strong>Edit this page</strong> in the bar at the bottom of the screen. Then click any words to change them, or click a photo to replace it. Press <strong>Save changes</strong> when you're done.</p>
-    <p>Lists such as programmes, team members and gallery photos have a small toolbar when you point at them: ✎ for all the details, arrows to reorder, 👁 to hide, and 🗑 to delete. Use the <strong>+ Add</strong> button under a list to add something new.</p>
+    <p>Lists, such as cards, people and photos, have a small toolbar when you point at an item: ✎ for all the details, arrows to reorder, 👁 to hide, and 🗑 to delete. Use the <strong>+ Add</strong> button under a list to add something new.</p>
     <form method="post" action="/admin/edit-mode">${csrfInput(ctx)}<input type="hidden" name="on" value="1"><input type="hidden" name="next" value="/"><button class="btn btn-navy">Start editing the homepage</button></form>
   </div>
   <div class="admin-card">
@@ -96,18 +95,18 @@ ${messages.map((m) => html`<article class="admin-card message${m.handled ? ' is-
   </footer>
 </article>`)}
 </div>
-<script src="/js/admin.js?v=${ctx.version}" defer></script>`,
+<script src="/_engine/admin.js?v=${ctx.version}" defer></script>`,
   });
 }
 
-function describe(r) {
+function describe(theme, r) {
   if (r.kind === 'field') {
     const key = r.ref;
     const page = key.split('.')[0];
-    return `${FIELDS[key]?.type === 'image' ? 'Photo' : 'Text'} "${key}" (${page})`;
+    return `${theme.fields[key]?.type === 'image' ? 'Photo' : 'Text'} "${key}" (${page})`;
   }
   const [coll] = r.ref.split(':');
-  const label = COLLECTIONS[coll]?.label ?? coll;
+  const label = theme.collections[coll]?.label ?? coll;
   const data = r.after ?? r.before ?? {};
   const name = typeof data === 'object' ? (data.name || data.title || data.stage || data.year || data.caption || '') : '';
   return `${label}${name ? ` "${name}"` : ''}`;
@@ -132,7 +131,7 @@ export function historyPage(ctx, { revisions }) {
 ${revisions.map((r) => html`<tr>
   <td>${when(r.at)}</td>
   <td>${r.user_name ?? '—'}</td>
-  <td>${verb[r.action] ?? r.action} ${describe(r)}</td>
+  <td>${verb[r.action] ?? r.action} ${describe(ctx.theme, r)}</td>
   <td class="muted">${preview(r.before)}</td>
   <td>${r.action === 'move' ? '' : html`<form method="post" action="/admin/history/${r.id}/restore">${csrfInput(ctx)}<button class="btn btn-outline btn-xs">Put back</button></form>`}</td>
 </tr>`)}
@@ -177,7 +176,7 @@ ${users.map((u) => html`<tr${attrs({ class: u.active ? null : 'muted' })}>
     <button class="btn btn-navy">Add person</button>
   </form>
 </div>
-<script src="/js/admin.js?v=${ctx.version}" defer></script>`,
+<script src="/_engine/admin.js?v=${ctx.version}" defer></script>`,
   });
 }
 

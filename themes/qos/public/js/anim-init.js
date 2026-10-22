@@ -4,7 +4,7 @@
 // failed to load) the animations are switched off again so nothing stays hidden.
 (function () {
   var root = document.documentElement;
-  if (root.classList.contains('no-anim') || !('IntersectionObserver' in window)) return;
+  if (root.classList.contains('is-editing') || !('IntersectionObserver' in window)) return;
   if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   root.classList.add('anim');
   setTimeout(function () {

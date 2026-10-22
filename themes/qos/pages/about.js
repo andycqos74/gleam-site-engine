@@ -1,4 +1,4 @@
-import { html } from '../html.js';
+import { html } from '../../../src/theme-api.js';
 import { timeline, impactBand } from './home.js';
 
 const RINGS = ['gold', 'blue', 'green', 'orange'];

@@ -1,5 +1,5 @@
-import { html } from '../html.js';
-import { STAGES } from '../content/schema.js';
+import { html } from '../../../src/theme-api.js';
+import { STAGES } from '../collections.js';
 
 const TAG_CYCLE = ['gold', 'blue', 'orange', 'green'];
 

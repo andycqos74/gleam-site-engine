@@ -1,5 +1,5 @@
-import { html } from '../html.js';
-import { SHOP_CATEGORIES } from '../content/schema.js';
+import { html } from '../../../src/theme-api.js';
+import { SHOP_CATEGORIES } from '../collections.js';
 import { filterChips } from './programmes.js';
 
 export function shop(k) {

@@ -1,8 +1,8 @@
 // Starting content: the design handover's structure, with copy, figures and photos from the Trust's strategy
 // document "Engage, Empower, Evolve" (October 2026). Anything an editor changes is stored in the database and
 // overrides these values; keys added here later appear on the site straight away with their default.
-// Lists (SEED) are written to the database once; see CONTENT_UPDATES in store.js for how later revisions of a list
-// reach a site that is already running.
+// Lists (SEED) are written to the database once; CONTENT_UPDATES (below) brings later revisions of a list into a
+// site that is already running.
 //
 // Still to fill in: programme times, venues and prices marked "TBC", shop prices, staff names and photos, and
 // funder logos.
@@ -12,6 +12,8 @@ const p = (value) => ({ type: 'textarea', value });     // plain text, line brea
 const r = (value) => ({ type: 'rich', value });         // bold, italic, links, lists
 const h = (value) => ({ type: 'headline', value });     // [square brackets] mark the highlighted pills
 const u = (value) => ({ type: 'url', value });
+// Shown in a page's "Page settings" panel in the editor, rather than on the page itself.
+const setting = (def, pages, label) => ({ ...def, settings: pages, label });
 const img = (value = '') => ({ type: 'image', value });
 
 const OSCR = 'https://www.oscr.org.uk/about-charities/search-the-register/charity-details?number=SC047994';
@@ -29,9 +31,9 @@ export const FIELDS = {
   'contact.email': t('community@qosfc.com'),
   'contact.phone': t('01387 254853'),
   'contact.address': t('Palmerston Park, 76–94 Terregles St, Dumfries DG2 9BA'),
-  'links.booking': u('/contact?topic=Bookings'),
-  'links.facebook': u(''),
-  'links.instagram': u(''),
+  'links.booking': setting(u('/contact?topic=Bookings'), ['programmes'], 'Default "Book Now" link for programmes (for example the online bookings site)'),
+  'links.facebook': setting(u(''), ['gallery'], 'Facebook page address'),
+  'links.instagram': setting(u(''), ['gallery'], 'Instagram page address'),
 
   // Home
   'meta.home.title': t('QoS Community Trust | Engage. Empower. Evolve.'),
@@ -150,8 +152,8 @@ export const FIELDS = {
   'contact.form.title': t('Send a message'),
   'contact.form.success': p("Thanks for getting in touch. We'll reply as soon as we can, usually within two working days."),
   'contact.details.eyebrow': t('Get in touch'),
-  'contact.map.lat': t('55.0714'),
-  'contact.map.lon': t('-3.6231'),
+  'contact.map.lat': setting(t('55.0714'), ['contact'], 'Map latitude'),
+  'contact.map.lon': setting(t('-3.6231'), ['contact'], 'Map longitude'),
   'contact.venues.title': t('Find our venues'),
 
   // News
@@ -337,3 +339,15 @@ export const SEED = {
     { category: 'camps', image: '/img/trust_wednesdayclub.jpg', caption: 'Wednesday Club at the Queen of the South Arena', size: 'wide', shape: 'rect' },
   ],
 };
+
+// Revisions of the starting lists above (SEED) to bring into sites that already have content. Add a new entry, with
+// a new key, each time the starting content of existing lists changes. "replace" lists are swapped for the new SEED
+// only if nobody has edited them on that site; "append" lists gain new items whose title isn't there yet.
+// Text fields need no entry: unedited fields always show the current default.
+export const CONTENT_UPDATES = [
+  {
+    key: 'update:2026-10-strategy',
+    replace: ['journey', 'programmes', 'stories', 'timeline', 'pillars', 'team', 'funders', 'venues', 'gallery'],
+    append: ['news'],
+  },
+];

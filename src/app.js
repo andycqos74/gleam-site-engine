@@ -2,45 +2,33 @@ import express from 'express';
 import multer from 'multer';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { openDb, now } from './db.js';
 import { createStore, ValidationError } from './content/store.js';
-import { COLLECTIONS, CONTACT_TOPICS, isScheduled } from './content/schema.js';
 import { createAuth, hashPassword, verifyPassword, passwordProblem, randomPassword } from './auth.js';
 import { createMedia } from './media.js';
 import { createMailer } from './mail.js';
-import { createKit } from './pages/kit.js';
-import { layout } from './pages/layout.js';
-import { home } from './pages/home.js';
-import { about } from './pages/about.js';
-import { programmes } from './pages/programmes.js';
-import { shop } from './pages/shop.js';
-import { gallery } from './pages/gallery.js';
-import { contact } from './pages/contact.js';
-import { privacy } from './pages/privacy.js';
-import { newsPage, articlePage, articleUrl } from './pages/news.js';
-import * as admin from './pages/admin.js';
-import { raw } from './html.js';
+import { createKit } from './kit.js';
+import { renderDocument } from './document.js';
+import { loadTheme, ROOT } from './theme.js';
+import * as admin from './admin-pages.js';
+import { html } from './html.js';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VERSION = Date.now().toString(36);
-
-const PAGES = {
-  '/': ['home', home],
-  '/about': ['about', about],
-  '/programmes': ['programmes', programmes],
-  '/shop': ['shop', shop],
-  '/news': ['news', newsPage],
-  '/gallery': ['gallery', gallery],
-  '/contact': ['contact', contact],
-  '/privacy': ['privacy', privacy],
-};
-
+const EDIT_COOKIE = 'site_edit';
 const EMAIL_RE = /^[^\s@<>()[\],;:"]+@[^\s@<>()[\],;:"]+\.[a-z]{2,}$/i;
 
+// Loads the theme named in config (THEME / THEME_DIR) and builds the site.
+export async function createSite(config) {
+  const theme = config.themeObject ?? await loadTheme({ theme: config.theme });
+  return createApp({ ...config, themeObject: theme });
+}
+
+// config.themeObject is a prepared theme (see theme.js); everything site-specific comes from it.
 export function createApp(config) {
+  const theme = config.themeObject;
+  if (!theme) throw new Error('createApp needs a theme: use createSite(config), or pass themeObject from loadTheme().');
   const db = openDb(config.dataDir);
-  const store = createStore(db);
+  const store = createStore(db, theme);
   const auth = createAuth(db, config);
   const mediaDir = config.mediaDir ?? path.join(config.dataDir, 'media');
   const media = createMedia(db, mediaDir);
@@ -52,9 +40,20 @@ export function createApp(config) {
   app.disable('x-powered-by');
   app.set('trust proxy', config.trustProxy ?? 'loopback, linklocal, uniquelocal');
 
+  // Themes can allow extra sources, e.g. csp: { frameSrc: ['https://www.openstreetmap.org'], fontSrc: [...] }.
+  const src = (base, extra = []) => [base, ...extra].join(' ');
+  const csp = [
+    "default-src 'self'",
+    `img-src ${src("'self' data: blob:", theme.csp.imgSrc)}`,
+    `style-src ${src("'self' 'unsafe-inline'", theme.csp.styleSrc)}`,
+    `script-src ${src("'self'", theme.csp.scriptSrc)}`,
+    `font-src ${src("'self'", theme.csp.fontSrc)}`,
+    `frame-src ${theme.csp.frameSrc?.length ? theme.csp.frameSrc.join(' ') : "'none'"}`,
+    "form-action 'self'", "frame-ancestors 'self'", "base-uri 'self'", "object-src 'none'",
+  ].join('; ');
   app.use((req, res, next) => {
     res.set({
-      'Content-Security-Policy': "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src https://www.openstreetmap.org; font-src 'self'; form-action 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
+      'Content-Security-Policy': csp,
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
@@ -68,12 +67,11 @@ export function createApp(config) {
     res.type('text').send('Healthy');
   });
 
+  // Engine assets (the editor) under /_engine; the theme's public/ folder at the site root (/css, /img, ...).
   const statics = { maxAge: '7d', index: false };
-  app.use('/css', express.static(path.join(ROOT, 'public/css'), statics));
-  app.use('/js', express.static(path.join(ROOT, 'public/js'), statics));
-  app.use('/img', express.static(path.join(ROOT, 'public/img'), statics));
-  app.use('/fonts', express.static(path.join(ROOT, 'public/fonts'), { ...statics, maxAge: '365d', immutable: true }));
+  app.use('/_engine', express.static(path.join(ROOT, 'public'), statics));
   app.use('/media', express.static(mediaDir, { ...statics, maxAge: '365d', immutable: true }));
+  app.use(express.static(theme.publicDir, statics));
 
   app.use(express.urlencoded({ extended: false, limit: '100kb' }));
   app.use(express.json({ limit: '1mb' }));
@@ -82,62 +80,66 @@ export function createApp(config) {
 
   // ---------- public pages ----------
   function context(req) {
-    const editing = !!req.user && !req.user.mustChange && req.cookies.qos_edit === '1';
+    const editing = !!req.user && !req.user.mustChange && req.cookies[EDIT_COOKIE] === '1';
     return {
+      theme,
       user: req.user,
       csrf: req.csrf,
       editing,
       fields: store.fields(),
       items: (coll) => store.items(coll, { includeHidden: editing }),
+      scheduled: store.scheduled,
       path: req.path,
       url: req.originalUrl,
+      query: req.query,
       baseUrl: config.baseUrl,
       version: VERSION,
     };
   }
 
+  function send(req, res, ctx, k, doc) {
+    res.set('Cache-Control', req.user ? 'private, no-store' : 'public, max-age=0, must-revalidate');
+    res.type('html').send(String(renderDocument(ctx, k, doc)));
+  }
+
   function renderPage(req, res, route, extra) {
-    const [page, render] = PAGES[route];
+    const page = theme.pages[route];
     const ctx = context(req);
     const k = createKit(ctx);
-    const body = render(k, extra);
-    res.set('Cache-Control', req.user ? 'private, no-store' : 'public, max-age=0, must-revalidate');
-    res.type('html').send(String(layout(ctx, k, { page, body, bodyClass: `page-${page}` })));
+    send(req, res, ctx, k, { page: page.key, body: page.render(k, extra ?? {}) });
   }
 
-  for (const route of Object.keys(PAGES)) {
-    if (route === '/contact') continue;
-    app.get(route, (req, res) => renderPage(req, res, route));
+  const contactPath = theme.contact?.path;
+  for (const route of Object.keys(theme.pages)) {
+    app.get(route, (req, res) => renderPage(req, res, route, route === contactPath ? { sent: req.query.sent === '1', topic: req.query.topic } : {}));
   }
 
-  app.get('/contact', (req, res) => renderPage(req, res, '/contact', { sent: req.query.sent === '1', topic: req.query.topic }));
+  // Lists with itemPage get a page per item at <base>/<id>-<slug>. Hidden or scheduled items are only visible to
+  // signed-in editors; an out-of-date slug redirects to the current one.
+  const itemPages = Object.entries(theme.collections).filter(([, c]) => c.itemPage);
+  for (const [name, c] of itemPages) {
+    app.get(`${c.itemPage.base}/:slug`, (req, res, next) => {
+      const id = Number.parseInt(req.params.slug, 10);
+      const it = Number.isFinite(id) ? store.getItem(id) : null;
+      if (!it || it.coll !== name || (!req.user && (it.hidden || store.scheduled(it)))) return next();
+      const ctx = context(req);
+      const k = createKit(ctx);
+      const url = k.itemUrl(it);
+      if (req.path !== url) return res.redirect(301, url);
+      const meta = c.itemPage.meta ? c.itemPage.meta(it, k) : {};
+      send(req, res, ctx, k, { page: c.itemPage.pageKey ?? name, body: c.itemPage.render(k, { item: it }), meta: { type: 'article', ...meta } });
+    });
+  }
 
-  // One news article: /news/<id>-<slug>. Hidden or future-dated articles are only visible to signed-in editors.
-  app.get('/news/:slug', (req, res, next) => {
-    const id = Number.parseInt(req.params.slug, 10);
-    const article = Number.isFinite(id) ? store.getItem(id) : null;
-    const ctx = context(req);
-    if (!article || article.coll !== 'news' || (!ctx.user && (article.hidden || isScheduled(article)))) return next();
-    const url = articleUrl(article);
-    if (req.path !== url) return res.redirect(301, url);
-    const k = createKit(ctx);
-    res.set('Cache-Control', req.user ? 'private, no-store' : 'public, max-age=0, must-revalidate');
-    res.type('html').send(String(layout(ctx, k, {
-      page: 'news',
-      body: articlePage(k, { article }),
-      bodyClass: 'page-article',
-      meta: { title: `${article.title} | ${ctx.fields['site.name']}`, description: article.summary, image: article.image, type: 'article' },
-    })));
-  });
-
-  // Contact form: works as a normal form post, and as fetch() from site.js (Accept: application/json).
+  // Contact form (theme.contact): works as a normal form post, and as fetch() with Accept: application/json.
+  // Fields: name, email, topic (one of theme.contact.topics), message; "website" is a honeypot.
   const contactHits = new Map();
-  app.post('/contact', async (req, res) => {
+  if (contactPath) app.post(contactPath, async (req, res) => {
     const wantsJson = req.accepts(['html', 'json']) === 'json';
     const form = {
       name: String(req.body.name ?? '').trim().slice(0, 200),
       email: String(req.body.email ?? '').trim().slice(0, 200),
-      topic: CONTACT_TOPICS.includes(req.body.topic) ? req.body.topic : '',
+      topic: theme.contact.topics.includes(req.body.topic) ? req.body.topic : '',
       message: String(req.body.message ?? '').trim().slice(0, 5000),
     };
     const errors = {};
@@ -151,7 +153,7 @@ export function createApp(config) {
 
     if (Object.keys(errors).length) {
       if (wantsJson) return res.status(422).json({ errors });
-      return renderPage(req, res.status(422), '/contact', { form, errors });
+      return renderPage(req, res.status(422), contactPath, { form, errors });
     }
     // Bots fill the hidden "website" field; pretend it worked.
     if (!req.body.website) {
@@ -160,24 +162,26 @@ export function createApp(config) {
       const { lastInsertRowid } = db.prepare('INSERT INTO messages (at, name, email, topic, message) VALUES (?, ?, ?, ?, ?)')
         .run(now(), form.name, form.email, form.topic, form.message);
       if (mailer) {
-        mailer.sendContact(form)
+        mailer.sendContact(form, siteName())
           .then(() => db.prepare('UPDATE messages SET emailed = 1 WHERE id = ?').run(lastInsertRowid))
           .catch((e) => console.error('Contact email failed:', e.message));
       }
     }
     if (wantsJson) return res.json({ ok: true });
-    res.redirect(303, '/contact?sent=1');
+    res.redirect(303, `${contactPath}?sent=1`);
   });
 
   app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /api\n${config.baseUrl ? `Sitemap: ${config.baseUrl}/sitemap.xml\n` : ''}`));
   app.get('/sitemap.xml', (req, res) => {
     const base = config.baseUrl || `${req.protocol}://${req.get('host')}`;
-    const urls = [...Object.keys(PAGES), ...store.items('news').map(articleUrl)];
+    const k = createKit({ theme, editing: false, fields: store.fields(), items: (c) => store.items(c), scheduled: store.scheduled });
+    const urls = [...Object.keys(theme.pages), ...itemPages.flatMap(([name]) => store.items(name).map(k.itemUrl))];
     res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((p) => `  <url><loc>${base}${p}</loc></url>`).join('\n')}\n</urlset>\n`);
   });
 
   // ---------- admin ----------
-  const adminCtx = (req, flash) => ({ user: req.user, csrf: req.csrf, version: VERSION, flash });
+  const siteName = () => store.fields()['site.name'] ?? theme.name;
+  const adminCtx = (req, flash) => ({ user: req.user, csrf: req.csrf, version: VERSION, flash, siteName: siteName(), logo: theme.adminLogo ?? theme.favicon, theme });
   const sendHtml = (res, page) => res.set('Cache-Control', 'no-store').type('html').send(String(page));
   const safeNext = (n) => (typeof n === 'string' && /^\/(?![/\\])/.test(n) ? n : '/admin');
 
@@ -203,13 +207,13 @@ export function createApp(config) {
 
   adminRouter.post('/logout', (req, res) => {
     auth.endSession(req, res);
-    res.clearCookie('qos_edit', { path: '/' });
+    res.clearCookie(EDIT_COOKIE, { path: '/' });
     res.redirect(303, '/');
   });
 
   adminRouter.post('/edit-mode', (req, res) => {
-    if (req.body.on === '1') res.cookie('qos_edit', '1', { path: '/', sameSite: 'lax', httpOnly: true, secure: config.cookieSecure ?? req.secure });
-    else res.clearCookie('qos_edit', { path: '/' });
+    if (req.body.on === '1') res.cookie(EDIT_COOKIE, '1', { path: '/', sameSite: 'lax', httpOnly: true, secure: config.cookieSecure ?? req.secure });
+    else res.clearCookie(EDIT_COOKIE, { path: '/' });
     res.redirect(303, safeNext(req.body.next));
   });
 
@@ -314,7 +318,7 @@ export function createApp(config) {
 
   api.post('/items', (req, res) => {
     const { coll, data } = req.body;
-    if (!COLLECTIONS[coll]) return res.status(400).json({ error: 'Unknown list.' });
+    if (!theme.collections[coll]) return res.status(400).json({ error: 'Unknown list.' });
     const id = store.createItem(coll, data ?? {}, req.user.id);
     res.json({ ok: true, id });
   });
@@ -342,9 +346,10 @@ export function createApp(config) {
     const saved = await media.save(req.file.buffer, req.file.originalname, req.user.id);
     res.json({ ok: true, ...saved });
   });
-  // The editor's photo library: everything uploaded, then the photos that ship with the site (public/img).
+  // The editor's photo library: everything uploaded, then the photos that ship with the theme (public/img).
   const bundled = () => {
-    const dir = path.join(ROOT, 'public/img');
+    const dir = path.join(theme.publicDir, 'img');
+    if (!fs.existsSync(dir)) return [];
     const walk = (d, prefix) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory()
       ? walk(path.join(d, e.name), `${prefix}${e.name}/`)
       : /\.(jpe?g|png|webp)$/i.test(e.name) ? [{ url: `/img/${prefix}${e.name}`, name: e.name }] : []));
@@ -360,9 +365,9 @@ export function createApp(config) {
     if (req.path.startsWith('/api/')) return res.json({ error: 'Not found' });
     const ctx = context(req);
     const k = createKit(ctx);
-    res.type('html').send(String(layout(ctx, k, {
+    res.type('html').send(String(renderDocument(ctx, k, {
       page: 'notfound',
-      body: notFound(),
+      body: theme.notFound ? theme.notFound(k) : html`<main><h1>Page not found</h1><p><a href="/">Go to the homepage</a></p></main>`,
     })));
   });
 
@@ -379,9 +384,6 @@ export function createApp(config) {
 
   app.locals.db = db;
   app.locals.store = store;
+  app.locals.theme = theme;
   return app;
-}
-
-function notFound() {
-  return raw(`<section class="hero hero-center"><h1 class="h-hero h-80">Page not <span class="pill pill-gold pill-a">found</span></h1><p class="lede">That page has moved or never existed.</p><div class="btn-row"><a class="btn btn-navy" href="/">Go to the homepage</a></div></section>`);
 }

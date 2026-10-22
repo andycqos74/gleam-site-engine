@@ -1,4 +1,6 @@
-# QoS Community Trust website. Content (database + uploaded photos) lives in the /data volume.
+# Site engine with in-place editing. One image runs any site: THEME picks the design and content model from
+# /app/themes (built in: qos, starter; mount your own at /app/themes/<name>), and each container keeps its own
+# content (database + uploaded photos) in its /data volume.
 
 FROM node:22-bookworm-slim AS deps
 # Compilers in case better-sqlite3 has no prebuilt binary for this platform; they stay out of the final image.
@@ -17,12 +19,14 @@ FROM node:22-bookworm-slim AS final
 ENV NODE_ENV=production \
     PORT=8080 \
     DATA_DIR=/data \
+    THEME=qos \
     TZ=Europe/London
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json ./
 COPY src ./src
 COPY public ./public
+COPY themes ./themes
 RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME /data

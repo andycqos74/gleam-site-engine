@@ -1,78 +1,29 @@
-import sanitizeHtml from 'sanitize-html';
-import { FIELDS, SEED } from './defaults.js';
-import { COLLECTIONS, itemDefaults, isScheduled, todayInUK } from './schema.js';
 import { now } from '../db.js';
+import { ValidationError, cleanValue, today, isScheduled, itemDefaults as defaultsFor } from './types.js';
 
-export class ValidationError extends Error {}
+export { ValidationError } from './types.js';
 
-// Revisions of the starting lists in defaults.js (SEED) to bring into sites that already have content. Add a new
-// entry, with a new key, each time the starting content of existing lists changes. Text fields need no entry:
-// unedited fields always show the current default.
-export const CONTENT_UPDATES = [
-  {
-    key: 'update:2026-10-strategy',
-    replace: ['journey', 'programmes', 'stories', 'timeline', 'pillars', 'team', 'funders', 'venues', 'gallery'],
-    append: ['news'],
-  },
-];
+// Content for one site: single fields (theme.fields), lists (theme.collections) and their change history.
+// Starting content comes from theme.seed; theme.contentUpdates brings later revisions into running sites.
 
-const RICH_OPTIONS = {
-  allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'ul', 'ol', 'li', 'h2', 'h3'],
-  allowedAttributes: { a: ['href'] },
-  allowedSchemes: ['http', 'https', 'mailto', 'tel'],
-  allowProtocolRelative: false,
-  transformTags: { b: 'strong', i: 'em', div: 'p' },
-};
-
-const oneLine = (v, max = 500) => String(v ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
-
-export function cleanUrl(v) {
-  const s = String(v ?? '').trim();
-  if (!s) return '';
-  if (/^(https?:\/\/|mailto:|tel:)/i.test(s) || (s.startsWith('/') && !s.startsWith('//')) || s.startsWith('#')) {
-    if (/[\s<>"]/.test(s.replace(/ /g, '%20'))) throw new ValidationError(`"${s}" is not a valid link.`);
-    return s.replace(/ /g, '%20').slice(0, 2000);
-  }
-  if (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(s)) return `https://${s}`.slice(0, 2000);
-  if (/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(s)) return `mailto:${s}`;
-  throw new ValidationError(`"${s}" is not a valid link. Use a web address, an email address or a page such as /contact.`);
-}
-
-export function cleanValue(field, v) {
-  switch (field.type) {
-    case 'text': case 'headline': case 'list': return oneLine(v);
-    case 'textarea': return String(v ?? '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 5000);
-    case 'rich': return sanitizeHtml(String(v ?? ''), RICH_OPTIONS).trim().slice(0, 50000);
-    case 'url': return cleanUrl(v);
-    case 'image': {
-      const s = String(v ?? '').trim();
-      if (s && !/^\/(media|img)\/([\w-]+\/)?[\w.-]+$/.test(s)) throw new ValidationError('That image is not one uploaded to this site.');
-      return s;
-    }
-    case 'select': return Object.hasOwn(field.options, v) ? v : field.default;
-    case 'bool': return v === true || v === 'true' || v === 'on' || v === 1;
-    case 'date': {
-      const d = String(v ?? '').trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(`${d}T00:00:00Z`)) || new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) !== d) {
-        throw new ValidationError('Enter a date such as 2026-11-05.');
-      }
-      return d;
-    }
-    default: throw new ValidationError(`Unknown field type ${field.type}`);
-  }
-}
-
-export function createStore(db) {
+export function createStore(db, theme) {
+  const FIELDS = theme.fields;
+  const COLLECTIONS = theme.collections;
+  const SEED = theme.seed ?? {};
+  const CONTENT_UPDATES = theme.contentUpdates ?? [];
+  const todayIso = () => today(theme.timeZone);
+  const itemDefaults = (coll) => defaultsFor(COLLECTIONS[coll], todayIso());
   let fieldCache = null;
 
   const insertSeed = (coll, data, pos) => db.prepare('INSERT INTO items (coll, pos, data, updated_at) VALUES (?, ?, ?, ?)')
-    .run(coll, pos, JSON.stringify({ ...itemDefaults(coll), ...data, ...(data.date === 'today' ? { date: todayInUK() } : {}) }), now());
+    .run(coll, pos, JSON.stringify({ ...itemDefaults(coll), ...data, ...Object.fromEntries(Object.entries(data).filter(([, v]) => v === 'today').map(([k]) => [k, todayIso()])) }), now());
   const metaDone = (key) => !!db.prepare('SELECT 1 FROM meta WHERE key = ?').get(key);
   const markDone = (key) => db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run(key, now());
 
   // First start: write each list's starting content once. A brand-new list counts as already having every update.
   const seed = db.transaction(() => {
     for (const [coll, items] of Object.entries(SEED)) {
+      if (!COLLECTIONS[coll]) throw new Error(`Theme seed has a list "${coll}" that is not in its collections.`);
       if (metaDone(`seeded:${coll}`)) continue;
       items.forEach((data, i) => insertSeed(coll, data, i + 1));
       markDone(`seeded:${coll}`);
@@ -93,7 +44,7 @@ export function createStore(db) {
           console.log(`Content update ${u.key}: kept "${coll}" as it is, because it has been edited on this site.`);
         } else {
           db.prepare('DELETE FROM items WHERE coll = ?').run(coll);
-          SEED[coll].forEach((data, i) => insertSeed(coll, data, i + 1));
+          (SEED[coll] ?? []).forEach((data, i) => insertSeed(coll, data, i + 1));
           console.log(`Content update ${u.key}: refreshed "${coll}".`);
         }
         markDone(`${u.key}:${coll}`);
@@ -102,7 +53,7 @@ export function createStore(db) {
         if (metaDone(`${u.key}:${coll}`)) continue;
         const titles = new Set(db.prepare('SELECT data FROM items WHERE coll = ?').all(coll).map((r) => JSON.parse(r.data).title));
         let { max } = db.prepare('SELECT COALESCE(MAX(pos), 0) AS max FROM items WHERE coll = ?').get(coll);
-        const added = SEED[coll].filter((data) => !titles.has(data.title));
+        const added = (SEED[coll] ?? []).filter((data) => !titles.has(data.title));
         added.forEach((data) => insertSeed(coll, data, ++max));
         if (added.length) console.log(`Content update ${u.key}: added ${added.length} item(s) to "${coll}".`);
         markDone(`${u.key}:${coll}`);
@@ -126,7 +77,7 @@ export function createStore(db) {
   }
 
   const parseItem = (row) => {
-    const defaults = itemDefaults(row.coll);
+    const defaults = COLLECTIONS[row.coll] ? itemDefaults(row.coll) : {};
     const data = { ...defaults, ...JSON.parse(row.data) };
     return { id: row.id, coll: row.coll, pos: row.pos, ...data };
   };
@@ -134,8 +85,12 @@ export function createStore(db) {
   // Visitors don't see hidden items, or news dated in the future; editors (includeHidden) see everything.
   function items(coll, { includeHidden = false } = {}) {
     const rows = db.prepare('SELECT * FROM items WHERE coll = ? ORDER BY pos, id').all(coll).map(parseItem);
-    if (COLLECTIONS[coll]?.sortBy === 'date') rows.sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.id - a.id);
-    return includeHidden ? rows : rows.filter((i) => !i.hidden && !isScheduled(i));
+    const def = COLLECTIONS[coll];
+    if (!def) return [];
+    // sortBy: '<field>' lists newest first by that field (e.g. a publish date) instead of the editors' order.
+    if (def.sortBy) rows.sort((a, b) => String(b[def.sortBy] ?? '').localeCompare(String(a[def.sortBy] ?? '')) || b.id - a.id);
+    const t = todayIso();
+    return includeHidden ? rows : rows.filter((i) => !i.hidden && !isScheduled(i, def, t));
   }
 
   function getItem(id) {
@@ -249,5 +204,7 @@ export function createStore(db) {
     }
   });
 
-  return { fields, items, getItem, setField, saveBatch, createItem, updateItem, deleteItem, moveItem, revisions, restore };
+  const scheduled = (item) => isScheduled(item, COLLECTIONS[item.coll], todayIso());
+
+  return { fields, items, getItem, scheduled, today: todayIso, setField, saveBatch, createItem, updateItem, deleteItem, moveItem, revisions, restore };
 }

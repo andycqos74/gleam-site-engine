@@ -1,16 +1,6 @@
-import { html } from '../html.js';
-import { formatDate, isScheduled, slugify } from '../content/schema.js';
+import { html } from '../../../src/theme-api.js';
 
 const TAG_CYCLE = ['gold', 'blue', 'orange', 'green'];
-
-export const articleUrl = (a) => `/news/${a.id}-${slugify(a.title)}`;
-
-function status(k, a) {
-  if (!k.ed) return '';
-  if (a.hidden) return html`<span class="ed-status">Hidden from visitors</span>`;
-  if (isScheduled(a)) return html`<span class="ed-status ed-status-scheduled">Scheduled: visitors see this from ${formatDate(a.date)}</span>`;
-  return '';
-}
 
 // News cards, newest first. Used on the homepage (latest few) and the News page (all).
 export function newsCards(k, articles, { cls = 'news-grid', addable = true } = {}) {
@@ -19,10 +9,10 @@ export function newsCards(k, articles, { cls = 'news-grid', addable = true } = {
       ${k.FI(a, 'image', { cls: 'news-img', sizes: '(max-width: 900px) 100vw, 400px', altField: 'title' })}
     </div>` : ''}
     <div class="news-body">
-      <div class="chips">${k.F(a, 'tag', { cls: `tag tag-${TAG_CYCLE[i % TAG_CYCLE.length]}` })}<time class="news-date" datetime="${a.date}">${formatDate(a.date)}</time></div>
-      <h3 class="news-title"><a class="stretch" href="${articleUrl(a)}"${k.ed ? html` data-f="title" data-type="text"` : ''}>${a.title}</a></h3>
+      <div class="chips">${k.F(a, 'tag', { cls: `tag tag-${TAG_CYCLE[i % TAG_CYCLE.length]}` })}<time class="news-date" datetime="${a.date}">${k.date(a.date)}</time></div>
+      <h3 class="news-title"><a class="stretch" href="${k.itemUrl(a)}"${k.ed ? html` data-f="title" data-type="text"` : ''}>${a.title}</a></h3>
       ${k.F(a, 'summary', { tag: 'p', cls: 'news-summary' })}
-      ${status(k, a)}
+      ${k.status(a)}
     </div>`, { cls: 'chunky news-card' }));
   return addable ? k.coll('news', cards, { cls }) : html`<div class="${cls}">${cards}</div>`;
 }
@@ -40,16 +30,16 @@ export function newsPage(k) {
 </section>`;
 }
 
-export function articlePage(k, { article: a }) {
-  const more = k.items('news').filter((n) => n.id !== a.id && !n.hidden && !isScheduled(n)).slice(0, 3);
+export function articlePage(k, { item: a }) {
+  const more = k.items('news').filter((n) => n.id !== a.id && !n.hidden && !k.scheduled(n)).slice(0, 3);
   return html`
 ${k.item(a, html`
   <header class="hero hero-left article-head">
     <a class="back-link" href="/news">← All news</a>
-    <div class="chips">${k.F(a, 'tag', { cls: 'tag tag-gold' })}<time class="news-date" datetime="${a.date}">${formatDate(a.date)}</time></div>
+    <div class="chips">${k.F(a, 'tag', { cls: 'tag tag-gold' })}<time class="news-date" datetime="${a.date}">${k.date(a.date)}</time></div>
     ${k.F(a, 'title', { tag: 'h1', cls: 'h-hero h-article' })}
     ${k.F(a, 'summary', { tag: 'p', cls: 'lede lede-left' })}
-    ${status(k, a)}
+    ${k.status(a)}
   </header>
   ${a.image || k.ed ? html`<div class="article-photo-wrap">${k.FI(a, 'image', { cls: 'article-photo', sizes: '(max-width: 900px) 100vw, 1180px', altField: 'title' })}</div>` : ''}
   ${k.F(a, 'body', { tag: 'div', cls: 'prose article-body' })}`,

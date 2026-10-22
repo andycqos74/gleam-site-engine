@@ -1,4 +1,6 @@
-# Portainer stack for the QoS Community Trust website.
+# Portainer stack for one website. The same image runs every site: deploy this stack once per site, each with its
+# own stack name, THEME, BASE_URL, admin account and Cloudflare tunnel. Portainer prefixes volumes with the stack
+# name, so every site automatically gets its own database and photos.
 # Pulls the image GitHub Actions publishes to ghcr.io; nothing is built on the server.
 # Public access is through a Cloudflare Tunnel (cloudflared): no ports are published on the host.
 # In the Cloudflare dashboard, point the tunnel's public hostname at http://web:8080.
@@ -13,6 +15,7 @@ services:
     image: ghcr.io/andycqos74/trust-website:${APP_TAG}
     restart: unless-stopped
     environment:
+      THEME: ${THEME:-qos}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       ADMIN_RESET: ${ADMIN_RESET:-false}
@@ -26,6 +29,9 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
     volumes:
       - site-data:/data
+      # A custom theme kept on the server instead of built into the image: uncomment, set THEME to its folder name,
+      # and point the left-hand path at the theme folder on the host.
+      # - /opt/site-themes/mytheme:/app/themes/mytheme:ro
     # Not using a tunnel? Remove the cloudflared service and publish a port for your reverse proxy instead:
     # ports:
     #   - "127.0.0.1:8081:8080"

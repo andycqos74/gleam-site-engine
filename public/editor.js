@@ -238,8 +238,10 @@
   document.addEventListener('click', (e) => {
     if (e.target.closest('.ed-ui, [data-admin-bar], .ed-drawer, .ed-modal')) return;
     const a = e.target.closest('a');
-    if (a && !a.closest('.site-nav, .brand')) e.preventDefault();
-    if (a && a.closest('.site-nav, .brand') && dirtyCount && !confirm('You have unsaved changes. Leave this page without saving?')) e.preventDefault();
+    // Links in the page header (or marked data-ed-nav) still navigate, so editors can move between pages.
+    const nav = a && !a.closest('[data-k], [data-f], [data-link-k], [data-link-f]') && a.closest('header, [data-ed-nav]');
+    if (a && !nav) e.preventDefault();
+    if (nav && dirtyCount && !confirm('You have unsaved changes. Leave this page without saving?')) e.preventDefault();
   }, true);
   document.querySelectorAll('main form').forEach((f) => f.addEventListener('submit', (e) => e.preventDefault()));
 
@@ -356,7 +358,10 @@
   document.querySelectorAll('[data-item]').forEach((item) => {
     const coll = COLLS[item.dataset.item];
     const id = item.dataset.id;
-    const horizontal = ['programmes', 'team', 'funders', 'venues', 'products', 'gallery', 'pillars', 'stories'].includes(item.dataset.item) && getComputedStyle(item.parentElement).display === 'grid';
+    // Arrows point the way the list runs on screen: across for multi-column grids and rows, down otherwise.
+    const ps = getComputedStyle(item.parentElement);
+    const horizontal = (ps.display.includes('grid') && ps.gridTemplateColumns.trim().split(/\s+/).length > 1)
+      || (ps.display.includes('flex') && ps.flexDirection.startsWith('row'));
     const isHidden = item.classList.contains('ed-hidden');
     const tools = el('div', { className: 'ed-item-tools ed-ui' }, [
       el('span', { className: 'ed-item-label', textContent: coll.label + (isHidden ? ' (hidden)' : '') }),
@@ -382,8 +387,8 @@
     const btn = el('button', { type: 'button', className: 'ed-add ed-ui', textContent: `+ Add ${container.dataset.collLabel.toLowerCase()}` });
     btn.addEventListener('click', () => structural(async () => {
       const { id } = await api('POST', '/api/items', { coll: name, data: defaults });
-      // A new news article opens on its own page, where its text is written.
-      if (name === 'news') location.href = `/news/${id}#ed-open-${id}`;
+      // Items with their own page (e.g. news articles) open there, where their main text is written.
+      if (COLLS[name].itemBase) location.href = `${COLLS[name].itemBase}/${id}#ed-open-${id}`;
       else reload(`ed-open-${id}`);
     }));
     container.after(btn);

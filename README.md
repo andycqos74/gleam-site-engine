@@ -1,30 +1,45 @@
-# QoS Community Trust website
+# Site engine with in-place editing
 
-The six-page "Winding Route" site from the design handover (Home, About, Programmes, Shop, Gallery, Contact), plus
-News (with a page per article) and Privacy. Approved staff edit the words and photos **in place on the page** after signing in, and every change is
-recorded, so any change can be undone.
+A small website engine where approved staff edit words, photos, links and lists **in place on the page**, with
+every change recorded and undoable. The look and content model of each site come from a **theme**; the engine
+supplies everything else (editing, accounts, change history, photo uploads, contact form, news-style item pages,
+scheduling, sitemap, admin screens). One Docker image runs any number of sites, each in its own container with its
+own theme and its own database.
+
+Themes included:
+
+| Theme | Site |
+| --- | --- |
+| `qos` | QoS Community Trust ("Winding Route" design): Home, About, Programmes, Shop, News, Gallery, Contact, Privacy |
+| `starter` | A plain community-hub site to copy when building a new design: Home, About, News, Contact |
 
 ## Stack
 
 | Layer | Choice |
 | --- | --- |
 | Server | Node.js 22, Express 5, server-rendered HTML (no build step) |
-| Content | SQLite (`better-sqlite3`) in the `/data` volume, with uploaded photos in `/data/media` |
+| Content | SQLite (`better-sqlite3`) in each site's `/data` volume, with uploaded photos in `/data/media` |
 | Photos | Resized on upload with `sharp` to 800 px and 1600 px WebP |
-| Front end | Plain CSS and a little vanilla JS; fonts self-hosted (no Google requests) |
-| Hosting | One Docker image, published to GHCR by GitHub Actions; Portainer stack with a Cloudflare Tunnel |
+| Front end | Whatever the theme ships: plain CSS and a little vanilla JS in both built-in themes |
+| Hosting | One Docker image, published to GHCR by GitHub Actions; one Portainer stack per site |
 
 ```
-src/content/defaults.js   Every editable piece of text/photo on the site, with its starting value
-src/content/schema.js     The editable lists (programmes, team, gallery, …) and their fields
-src/content/store.js      Reading/saving content, validation, change history
-src/pages/*.js            Page templates; kit.js marks what is editable
-public/js/editor.js       The in-page editor (only loaded for signed-in users)
-public/js/site.js         Visitor scripts: mobile menu, filters, lightbox, contact form
-deploy/portainer          Portainer stack and its variables
+src/                     The engine
+  app.js                 Routes: theme pages, item pages, contact form, admin, editing API
+  theme.js               Loads and checks the theme named by THEME
+  kit.js                 The template toolkit ("k") that marks what is editable
+  document.js            The HTML document: <head>, social tags, editing tools around the theme's layout
+  content/store.js       Reading/saving content, validation, change history, content updates
+  content/types.js       Field types and date helpers
+  theme-api.js           What themes import from the engine
+public/                  Engine assets, served at /_engine/ (editor.js, editor.css, admin.js)
+themes/<name>/           One folder per theme
+  theme.js               The manifest: content model, pages, layout, assets
+  public/                The theme's CSS, JS, fonts and images, served at the site root
+deploy/portainer         Portainer stack and its variables
 ```
 
-## Editing the site (for Trust staff)
+## Editing a site (for staff)
 
 1. Go to `https://<your site>/admin` and sign in.
 2. Press **Edit this page** in the bar at the bottom of any page.
@@ -51,7 +66,7 @@ Contact form messages appear under **Admin → Messages** (and are emailed too i
 Administrators add and remove editors under **Admin → People**. New people get a one-time password that they must
 change at first sign-in.
 
-## Before go-live
+## Before go-live (QoS theme)
 
 Copy, figures and many photos come from the Trust's strategy document (*Engage, Empower, Evolve*, October 2026).
 Still to fill in, all editable in place:
@@ -67,7 +82,7 @@ Still to fill in, all editable in place:
 - Review the starter Privacy Policy text
 - The example *Community Football Coach* vacancy starts hidden because its closing date has passed
 
-Photos from the strategy document are in `public/img/trust/`, and editors can reuse them from the photo library.
+Photos from the strategy document are in `themes/qos/public/img/trust/`, and editors can reuse them from the photo library.
 
 Notes on the design:
 
@@ -125,13 +140,14 @@ for example with a nightly copy from the Docker host:
 
 ```bash
 docker run --rm -v <stack>_site-data:/data -v /backups:/backups alpine \
-  tar czf /backups/trust-website-$(date +%F).tgz -C /data .
+  tar czf /backups/<stack>-$(date +%F).tgz -C /data .
 ```
 
 ## Configuration
 
 | Variable | Purpose |
 | --- | --- |
+| `THEME` | Which theme the site runs: a folder in `themes/` (default `qos`) |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | First administrator, created only when there are no accounts yet |
 | `ADMIN_RESET` | `true` = on start, set the `ADMIN_EMAIL` account's password back to `ADMIN_PASSWORD` |
 | `BASE_URL` | Public address, for canonical links, sitemap and social previews |
@@ -141,13 +157,66 @@ docker run --rm -v <stack>_site-data:/data -v /backups:/backups alpine \
 | `PORT` | Listening port (8080) |
 | `TRUST_PROXY` | Express `trust proxy` setting; defaults to private networks (tunnel/proxy containers) |
 
-## Adding something new to a page
+## Running more than one site
 
-- A single editable piece of text or photo: add a key to `src/content/defaults.js`, then use `k.text('key')`,
-  `k.headline('key')`, `k.link('key')` (with a `key.url` field) or `k.image('key')` in the page template.
-- A new list: add it to `COLLECTIONS` in `src/content/schema.js` (and optional starting items to `SEED` in
-  `defaults.js`), then render it with `k.coll()` / `k.item()` / `k.F()` / `k.FI()` / `k.FL()`.
-- Changing the starting content of lists a running site already has: edit `SEED`, then add an entry to
-  `CONTENT_UPDATES` in `src/content/store.js` with a new key. On the next start, each listed collection is replaced
-  only if nobody has edited it there (otherwise it is left alone and the log says so), and `append` collections
-  gain the new items. Text fields need nothing: unedited fields always show the current default.
+Every site is the same image with a different `THEME` and its own `/data` volume, so sites never share content,
+accounts or photos.
+
+1. In Portainer, add another stack from `deploy/portainer/docker-compose.yml` with a new stack name (e.g.
+   `riverside-hub`). Portainer prefixes volumes with the stack name, so the new site gets its own `site-data`.
+2. Set its variables: `THEME` (e.g. `starter`), `BASE_URL`, `ADMIN_EMAIL` / `ADMIN_PASSWORD`, its own
+   `CLOUDFLARE_TUNNEL_TOKEN` (or one tunnel with several public hostnames, if you put the sites on one network) and
+   its own `CONTACT_TO`.
+3. Deploy. The first start creates the site's database from the theme's starting content.
+
+A theme that isn't built into the image can be kept on the server and mounted read-only at
+`/app/themes/<name>` (see the commented line in the stack), with `THEME=<name>`. Updating the engine is then just
+**Pull and redeploy**, and each site picks up the new engine with its own theme and content unchanged.
+
+Locally, two sites side by side:
+
+```bash
+THEME=qos     DATA_DIR=./data-qos     PORT=8080 npm start
+THEME=starter DATA_DIR=./data-starter PORT=8081 npm start
+```
+
+## Writing a theme
+
+Copy `themes/starter` to `themes/<your-name>` and edit. A theme is a folder with:
+
+- **`theme.js`**, whose default export is the manifest:
+
+  | Key | What it is |
+  | --- | --- |
+  | `name`, `lang`, `timeZone` | Site name (fallback for the admin screens), page language, time zone for scheduled items |
+  | `fields` | Single editable values: `{ 'home.hero.title': f.headline('Hello [world]'), ... }`. Types: `text`, `textarea`, `rich`, `headline`, `url`, `image` (helpers in `src/theme-api.js`). `meta.<page>.title` / `.description` become each page's title and description. Add `settings: ['<page>' or '*'], label` to put a field in that page's *Page settings* panel instead of on the page. |
+  | `collections` | Editable lists: `{ team: { label, fields: { name: { type, label, default }, ... } } }`, plus optional `sortBy: '<field>'` (newest first), `publishDate: '<date field>'` (hidden until that day) and `itemPage: { base, titleField, render, meta }` (a page per item at `<base>/<id>-<slug>`). Field types add `select` (with `options`), `bool`, `list` and `date`. Every list gets *Hide from visitors* automatically. |
+  | `seed`, `contentUpdates` | Starting items for each list; later revisions for running sites (see below) |
+  | `pages` | `{ '/about': { key: 'about', render(k, extra) } }` |
+  | `layout(k, { page, body })` | Everything inside `<body>`: header, `body`, footer. Links in `<header>` stay clickable in edit mode. |
+  | `head(k, { page, version })` | Optional extra `<head>` content (font preloads, early scripts) |
+  | `stylesheets`, `scripts` | Asset paths in the theme's `public/` folder |
+  | `contact: { path, topics }` | Optional: the page whose form posts `name`, `email`, `topic`, `message` (and an empty `website` honeypot) |
+  | `notFound(k)`, `favicon`, `shareImage`, `adminLogo`, `colours`, `csp` | Optional extras (`csp: { frameSrc: [...] }` allows e.g. a map embed) |
+
+- **Templates** get `k`, the engine's toolkit. For single fields: `k.text(key, { tag, cls })`, `k.headline`,
+  `k.rich`, `k.image`, `k.link(key)` (words in `key`, address in `key.url`), `k.value(key)`. For lists:
+  `k.items(name)`, then `k.coll(name, items.map((it) => k.item(it, inner)))` with `k.F(it, field)`,
+  `k.FI(it, imageField)` and `k.FL(it, labelField, urlField)` inside. Also `k.ed` (is an editor editing),
+  `k.itemUrl(it)`, `k.scheduled(it)`, `k.status(it)` (editors' Hidden/Scheduled badge) and `k.date(iso)`.
+  Escape-safe HTML comes from `html` in `src/theme-api.js`.
+- **`public/`**: the theme's CSS, JS, fonts and images, served at the site root. Images that editors should be able
+  to pick from the photo library go in `public/img/`. Style `.ph` (an empty photo slot) and `.pill` (highlighted
+  headline words); the editing tools style themselves.
+
+Run `npm test`, then `THEME=<your-name> npm run dev` to try it. The engine checks the manifest at start-up and
+explains anything missing.
+
+### Changing a theme's content on sites that already run it
+
+Text fields need nothing: unedited fields always show the theme's current default, and edited ones keep the
+editor's words. For lists, edit `seed`, then add an entry to the theme's `contentUpdates` with a new key, e.g.
+`{ key: 'update:2027-01', replace: ['team'], append: ['news'] }`. On the next start, each `replace` list is swapped
+for the new seed only if nobody has edited it on that site (otherwise it is kept and the log says so), and
+`append` lists gain items whose title isn't there yet.
+

@@ -5,6 +5,9 @@ export function loadConfig(env = process.env) {
   return {
     port: Number(env.PORT || 8080),
     dataDir: env.DATA_DIR || './data',
+    // Which design and content model this site runs: a folder in themes/. A custom theme can be mounted into the
+    // container at /app/themes/<name>.
+    theme: env.THEME || 'qos',
     baseUrl: (env.BASE_URL || '').replace(/\/+$/, ''),
     adminEmail: (env.ADMIN_EMAIL || '').trim().replace(/^(['"])(.*)\1$/, '$2'),
     // Quotes around the value are a common copy-paste slip in Portainer's variable editor; ignore them.

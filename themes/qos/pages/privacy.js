@@ -1,4 +1,4 @@
-import { html } from '../html.js';
+import { html } from '../../../src/theme-api.js';
 
 export function privacy(k) {
   return html`

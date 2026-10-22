@@ -10,12 +10,12 @@ export function createMailer(config) {
     auth: config.smtpUser ? { user: config.smtpUser, pass: config.smtpPassword } : undefined,
   });
   return {
-    async sendContact(msg) {
+    async sendContact(msg, siteName = 'Website') {
       await transport.sendMail({
         from: config.mailFrom,
         to: config.contactTo,
         replyTo: { name: msg.name, address: msg.email },
-        subject: `Website enquiry: ${msg.topic || 'General'} from ${msg.name}`,
+        subject: `${siteName} enquiry: ${msg.topic || 'General'} from ${msg.name}`,
         text: `Name: ${msg.name}\nEmail: ${msg.email}\nTopic: ${msg.topic || '-'}\n\n${msg.message}\n`,
       });
     },

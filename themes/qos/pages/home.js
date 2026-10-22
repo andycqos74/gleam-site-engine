@@ -1,5 +1,4 @@
-import { html, attrs } from '../html.js';
-import { isScheduled } from '../content/schema.js';
+import { html, attrs } from '../../../src/theme-api.js';
 import { newsCards } from './news.js';
 
 // Colour-block programme cards on the homepage cycle through this sequence (from the design).
@@ -58,8 +57,8 @@ export function home(k) {
   const stories = k.items('stories');
   // The three latest published articles; editors also see what's scheduled so they can check it.
   const allNews = k.items('news');
-  const liveNews = allNews.filter((a) => !a.hidden && !isScheduled(a)).slice(0, 3);
-  const news = k.ed ? [...allNews.filter((a) => !a.hidden && isScheduled(a)), ...liveNews] : liveNews;
+  const liveNews = allNews.filter((a) => !a.hidden && !k.scheduled(a)).slice(0, 3);
+  const news = k.ed ? [...allNews.filter((a) => !a.hidden && k.scheduled(a)), ...liveNews] : liveNews;
 
   return html`
 <section class="hero hero-center">
