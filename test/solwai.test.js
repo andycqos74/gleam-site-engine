@@ -64,7 +64,7 @@ test('the home page carries the handover copy, figures and app cards', async () 
   assert.match(page, /Apps with AI built in<\/span> · 6/);
   assert.match(page, />Services<\/span> · 2/);
   assert.equal((page.match(/class="card app-card"/g) ?? []).length, 6);
-  assert.match(page, /This<span class="wm-hyphen">-<\/span>Organiser/);
+  assert.match(page, /wm-27">This-Organiser</);
   assert.match(page, /href="\/b-ook"/);
 });
 
