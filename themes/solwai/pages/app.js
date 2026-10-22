@@ -110,6 +110,12 @@ ${app.sections.map((s) => SECTIONS[s.type](k, key, s))}
       ${k.link(`${key}.cta.button`, { cls: 'btn btn-secondary btn-lg' })}
     </div>
   </section>
-</div>`;
+</div>
+${app.legal ? html`<section class="legal" aria-label="Legal">
+  <div class="wrap legal-in">
+    <span class="mono">${app.name}</span>
+    <nav class="legal-links">${app.legal.map((_, i) => k.link(`${key}.legal.${i + 1}`))}</nav>
+  </div>
+</section>` : ''}`;
   };
 }

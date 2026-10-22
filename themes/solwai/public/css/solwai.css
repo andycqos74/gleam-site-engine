@@ -316,6 +316,12 @@ code { font-family: var(--font-mono); font-size: 13px; color: var(--navy); backg
 .page-luggage .cta-h2 { max-width: 20ch; }
 .cta-text { color: var(--slate-on-navy); max-width: 56ch; }
 
+/* Legal links under the closing band (apps with legal: in apps.js) */
+.legal-in { padding-top: 24px; padding-bottom: 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+.legal-links { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 14px; font-weight: 500; }
+.legal-links a { color: var(--slate-600); }
+.legal-links a:hover { color: var(--link-hover); }
+
 /* Empty photo slot (editors only) */
 .ph { background: repeating-linear-gradient(135deg, var(--surface-sunken) 0 12px, var(--white) 12px 24px); display: flex; align-items: center; justify-content: center; }
 .hero-home .ph { position: absolute; inset: 0; background: var(--navy-800); }

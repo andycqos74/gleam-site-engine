@@ -11,6 +11,7 @@
 //   reasons   short points in a row under a hairline (list <key>Points)
 //   panels    grey panels with an optional label (list <key>Panels)
 //   closing   two columns: heading and one paragraph
+// An app can also list legal links (legal: [[words, address], ...]), shown in a small row under the closing band.
 
 export const APPS = [
   {
@@ -85,6 +86,7 @@ export const APPS = [
       ['Everywhere you are', 'Install it on your phone, tablet or desktop as an app. It opens without a connection and sends a <strong>daily digest</strong> of what\'s overdue and due today, at a time you choose.'],
     ],
     cta: { title: 'Stop managing your list. Start finishing it.', text: '', button: ['Get This-Organiser', '/#contact'] },
+    legal: [['Privacy policy', ''], ['Terms of service', '']],
   },
   {
     key: 'unseen',
