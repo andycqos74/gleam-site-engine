@@ -45,6 +45,14 @@ ${body}
   <div class="footer-right">
     <a href="mailto:${email}">${k.text('contact.email')}</a> · <a href="tel:${phone.replace(/\s/g, '')}">${k.text('contact.phone')}</a><br>${k.text('contact.address')}
   </div>
+  <a class="powered-by" href="https://solwai.co.uk/gleam" rel="noopener">
+    <span class="powered-pair"><span class="powered-label">POWERED BY</span>
+    <img src="/img/gleam-mark.svg" alt="" width="24" height="17">
+    <span class="powered-product">GLEAM</span></span>
+    <span class="powered-pair"><span class="powered-label">FROM</span>
+    <img src="/img/solwai-mark.svg" alt="" width="24" height="17">
+    <span class="powered-house">SOLW<span class="powered-ai">AI</span></span></span>
+  </a>
 </footer>`;
 }
 
