@@ -11,6 +11,7 @@
 //   reasons   short points in a row under a hairline (list <key>Points)
 //   panels    grey panels with an optional label (list <key>Panels)
 //   closing   two columns: heading and one paragraph
+// An app can also list legal links (legal: [[words, address], ...]), shown in a small row under the closing band.
 
 export const APPS = [
   {
@@ -54,6 +55,7 @@ export const APPS = [
       ['No middleman.', 'Your customer data stays yours.'],
     ],
     cta: { title: 'Turn first-time visitors into regulars.', text: 'Set up your loyalty programme today and stamp your first card this afternoon.', button: ['Get started', '/#contact'] },
+    legal: [['Privacy policy', ''], ['Terms of service', '']],
   },
   {
     key: 'organiser',
@@ -85,6 +87,7 @@ export const APPS = [
       ['Everywhere you are', 'Install it on your phone, tablet or desktop as an app. It opens without a connection and sends a <strong>daily digest</strong> of what\'s overdue and due today, at a time you choose.'],
     ],
     cta: { title: 'Stop managing your list. Start finishing it.', text: '', button: ['Get This-Organiser', '/#contact'] },
+    legal: [['Privacy policy', ''], ['Terms of service', '']],
   },
   {
     key: 'unseen',
@@ -134,6 +137,7 @@ export const APPS = [
       ['', 'Your data stays yours', 'Unseen is self-hosted. Your backups go only to storage you choose, on hardware or accounts you control. There\'s no third-party service in the middle and no lock-in.'],
     ],
     cta: { title: 'Protect every machine you manage in an afternoon.', text: 'Run one server, install one agent per machine, and handle every backup from one dashboard.', button: ['Deploy Unseen', '/#contact'] },
+    legal: [['Privacy policy', ''], ['Terms of service', '']],
   },
   {
     key: 'luggage',
@@ -177,6 +181,7 @@ export const APPS = [
       ['', 'You host it, you control it', 'Luggage runs on your own server from a single Docker container. Your file list stays in a database you control, and your files stay in storage you already own. There\'s no extra subscription or middleman, and no one else holding your data.'],
     ],
     cta: { title: 'One drive. All your space. Your server.', text: '', button: ['Get started', '/#contact'] },
+    legal: [['Privacy policy', ''], ['Terms of service', '']],
   },
   {
     key: 'book',
@@ -214,6 +219,7 @@ export const APPS = [
       ['Your brand', 'Fits into your own website', 'B-ook takes your colours, fonts and logo. Embed the booking calendar on your club or venue site, and customers book without leaving it.'],
     ],
     cta: { title: 'Book, pay and manage in one place.', text: '', button: ['Get started', '/#contact'] },
+    legal: [['Privacy policy', ''], ['Terms of service', '']],
   },
   {
     key: 'gleam',
@@ -247,6 +253,7 @@ export const APPS = [
       ['Search-friendly', 'Set each page\'s search-engine title and description from the edit bar.'],
     ],
     cta: { title: 'Your website, edited where you see it.', text: '', button: ['Get started', '/#contact'] },
+    legal: [['Privacy policy', ''], ['Terms of service', '']],
   },
 ];
 

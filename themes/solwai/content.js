@@ -78,6 +78,10 @@ function appFields(app) {
     [`${key}.cta.button`]: f.text(cta.button[0]),
     [`${key}.cta.button.url`]: f.url(cta.button[1]),
   };
+  (app.legal ?? []).forEach(([words, url], i) => {
+    fields[`${key}.legal.${i + 1}`] = f.text(words);
+    fields[`${key}.legal.${i + 1}.url`] = f.url(url);
+  });
   for (const s of app.sections) {
     if (s.title !== undefined) fields[`${key}.${s.type}.title`] = f.text(s.title);
     if (s.body !== undefined) fields[`${key}.${s.type}.body`] = f.rich(s.body);

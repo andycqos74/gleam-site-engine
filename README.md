@@ -101,6 +101,8 @@ Copy, figures and layout follow the SolwAI design handover word for word. Still 
   *Book a free AI review* button (click it; it starts as `mailto:[EMAIL]`).
 - Give the app pages' *Get started* buttons real addresses (they go to the home page's contact panel for now).
   Unseen's *Read the docs* button stays hidden from visitors until it has an address.
+- Set the addresses of the *Privacy policy* and *Terms of service* links at the bottom of each app page
+  (click each link; they go nowhere until set). Each app has its own pair, so they can point to each app's own policies.
 - Confirm the product name "Unseen" (the design system calls it "Patrician") and the Consultancy and Hosting copy.
 - **Buy the full licence for Quadrillion Extra Light** (`themes/solwai/public/fonts/Quadrillion-ExtraLight.otf`,
   used for the product wordmarks): the handover's file has a demo licence.
