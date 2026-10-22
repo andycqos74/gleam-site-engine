@@ -1,4 +1,4 @@
-# Site engine with in-place editing. One image runs any site: THEME picks the design and content model from
+# Gleam Site Engine: websites with in-place editing. One image runs any site: THEME picks the design and content model from
 # /app/themes (built in: qos, starter; mount your own at /app/themes/<name>), and each container keeps its own
 # content (database + uploaded photos) in its /data volume.
 

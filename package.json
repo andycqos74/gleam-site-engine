@@ -1,8 +1,8 @@
 {
-  "name": "qos-trust-website",
+  "name": "gleam-site-engine",
   "version": "1.0.0",
   "private": true,
-  "description": "QoS Community Trust website with in-place editing for approved users",
+  "description": "Website engine with in-place editing for approved users; each site is a theme",
   "type": "module",
   "main": "src/server.js",
   "engines": {

@@ -1,4 +1,4 @@
-# Site engine with in-place editing
+# Gleam Site Engine
 
 A small website engine where approved staff edit words, photos, links and lists **in place on the page**, with
 every change recorded and undoable. The look and content model of each site come from a **theme**; the engine
@@ -105,7 +105,7 @@ Or with Docker: `cp .env.example .env && docker compose up --build`.
 ## Deploy with Portainer
 
 GitHub Actions (`.github/workflows/ci.yml`) runs the tests and publishes the image to
-`ghcr.io/andycqos74/trust-website` with tags `<branch>`, `sha-<commit>` and `latest` (default branch), for both
+`ghcr.io/andycqos74/gleam-site-engine` with tags `<branch>`, `sha-<commit>` and `latest` (default branch), for both
 amd64 and arm64.
 
 1. In Cloudflare Zero Trust, create a tunnel (Docker) and copy its token. Add a public hostname for the site with
