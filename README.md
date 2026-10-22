@@ -11,6 +11,7 @@ Themes included:
 | Theme | Site |
 | --- | --- |
 | `qos` | QoS Community Trust ("Winding Route" design): Home, About, Programmes, Shop, News, Gallery, Contact, Privacy |
+| `solwai` | SolwAI marketing site (design handover "firstlive"): AI services home page, plus a page each for Drum, This-Organiser, Unseen, Luggage, B-ook and Gleam |
 | `starter` | A plain community-hub site to copy when building a new design: Home, About, News, Contact |
 
 ## Stack
@@ -91,6 +92,31 @@ Notes on the design:
   system is chosen.
 - **Vacancies** show only when at least one is visible, as the handover asks.
 - The **Journeys** nav item goes to the journeys section on the homepage.
+
+## Before go-live (SolwAI theme)
+
+Copy, figures and layout follow the SolwAI design handover word for word. Still to do, all editable in place unless noted:
+
+- Replace `[EMAIL]` and `[PHONE]` in the home page's contact panel (click them), and set the address of its
+  *Book a free AI review* button (click it; it starts as `mailto:[EMAIL]`).
+- Give the app pages' *Get started* buttons real addresses (they go to the home page's contact panel for now).
+  Unseen's *Read the docs* button stays hidden from visitors until it has an address.
+- Confirm the product name "Unseen" (the design system calls it "Patrician") and the Consultancy and Hosting copy.
+- **Buy the full licence for Quadrillion Extra Light** (`themes/solwai/public/fonts/Quadrillion-ExtraLight.otf`,
+  used for the product wordmarks): the handover's file has a demo licence.
+
+Notes on the design:
+
+- Each app page is built from the sections listed for it in `themes/solwai/apps.js` (intro, steps, feature cards,
+  lists, grey panels, closing). Their words, steps, cards and list items are all editable; adding a new app page,
+  or changing an app's accent colour or mark, is a code change (`apps.js`, `marks.js`, `solwai.css`).
+- The home page figures are a list (*Figure*), each placed in the *Dumfries & Galloway* or *United Kingdom* panel.
+  The counts after "Apps with AI built in" and "Services" follow the number of visible cards.
+- Fonts are self-hosted (Figtree, IBM Plex Mono and Red Hat Display from Fontsource; Quadrillion and C64 Keyboard
+  from the handover), so pages make no requests to Google.
+- Motion is subtle and decorative: the hero settles in line by line, the big app mark draws itself in, sections and
+  cards rise into place as they scroll into view, accent dashes draw out beside each key point and the headline
+  figures count up. It is off in edit mode and for visitors whose device asks for reduced motion.
 
 ## Run it locally
 

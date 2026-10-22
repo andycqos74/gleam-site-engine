@@ -1,13 +1,13 @@
 // Field types every theme can use, how submitted values are cleaned, and the date helpers behind scheduled items.
 // Types: text (one line), textarea (plain text, line breaks kept), headline (text where [square brackets] mark
-// highlighted words), rich (bold, italic, links, lists, headings), url, image, select (options), bool,
+// highlighted words), rich (bold, italic, code, links, lists, headings), url, image, select (options), bool,
 // list (comma-separated words), date (YYYY-MM-DD).
 import sanitizeHtml from 'sanitize-html';
 
 export class ValidationError extends Error {}
 
 const RICH_OPTIONS = {
-  allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'ul', 'ol', 'li', 'h2', 'h3'],
+  allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'code', 'a', 'ul', 'ol', 'li', 'h2', 'h3'],
   allowedAttributes: { a: ['href'] },
   allowedSchemes: ['http', 'https', 'mailto', 'tel'],
   allowProtocolRelative: false,
