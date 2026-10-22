@@ -45,15 +45,15 @@ ${body}
   <div class="footer-right">
     <a href="mailto:${email}">${k.text('contact.email')}</a> · <a href="tel:${phone.replace(/\s/g, '')}">${k.text('contact.phone')}</a><br>${k.text('contact.address')}
   </div>
-  <a class="powered-by" href="https://solwai.co.uk/gleam" rel="noopener">
-    <span class="powered-pair"><span class="powered-label">POWERED BY</span>
-    <img src="/img/gleam-mark.svg" alt="" width="24" height="17">
-    <span class="powered-product">GLEAM</span></span>
-    <span class="powered-pair"><span class="powered-label">FROM</span>
-    <img src="/img/solwai-mark.svg" alt="" width="24" height="17">
-    <span class="powered-house">SOLW<span class="powered-ai">AI</span></span></span>
-  </a>
-</footer>`;
+</footer>
+<div class="powered-by">
+  <div class="powered-inner">
+    <span class="pb-text">Powered by</span>
+    <a href="https://solwai.co.uk/gleam" aria-label="Gleam"><img class="gl-mark" src="/img/gleam-mark-on-navy.svg" alt="" width="23" height="16"><span class="gl-name">GLEAM</span></a>
+    <span class="pb-text">from</span>
+    <a href="https://solwai.co.uk"><img class="sw-mark" src="/img/solwai-mark-on-navy.svg" alt="" width="23" height="16"><span class="sw-name">SOLW<span class="ai">AI</span></span></a>
+  </div>
+</div>`;
 }
 
 export function notFound() {
