@@ -104,8 +104,6 @@ Copy, figures and layout follow the SolwAI design handover word for word. Still 
 - Set the addresses of the *Privacy policy* and *Terms of service* links at the bottom of each app page
   (click each link; they go nowhere until set). Each app has its own pair, so they can point to each app's own policies.
 - Confirm the product name "Unseen" (the design system calls it "Patrician") and the Consultancy and Hosting copy.
-- **Buy the full licence for Quadrillion Extra Light** (`themes/solwai/public/fonts/Quadrillion-ExtraLight.otf`,
-  used for the product wordmarks): the handover's file has a demo licence.
 
 Notes on the design:
 

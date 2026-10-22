@@ -39,8 +39,8 @@ export function appMark(mark, width, { cls } = {}) {
 
 export const MARKS = { drum: 'Drum', organiser: 'This-Organiser', patrician: 'Unseen', luggage: 'Luggage', book: 'B-ook', gleam: 'Gleam', solwai: 'SolwAI' };
 
-// Product wordmark: Quadrillion Extra Light, with any hyphen set in Figtree 300 (This-Organiser, B-ook).
-export const wordmark = (name) => raw(String(name).split('-').map((part) => html`${part}`).join('<span class="wm-hyphen">-</span>'));
+// Product wordmark: Quadrillion Light (This-Organiser, B-ook).
+export const wordmark = (name) => html`${String(name)}`;
 
 // The SolwAI logo lockup: mark plus SOLW<span>AI</span>. size scales it like the design system's Logo.
 export function logo(size) {
