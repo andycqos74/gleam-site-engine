@@ -103,6 +103,8 @@ Copy, figures and layout follow the SolwAI design handover word for word. Still 
   Unseen's *Read the docs* button stays hidden from visitors until it has an address.
 - Set the addresses of the *Privacy policy* and *Terms of service* links at the bottom of each app page
   (click each link; they go nowhere until set). Each app has its own pair, so they can point to each app's own policies.
+  B-ook's already point to its policies, plain HTML pages in `themes/solwai/public/b-ook/` (served at `/b-ook/privacy`
+  and `/b-ook/terms`, styled by `public/css/legal.css`); edit those files to change the wording.
 - Confirm the product name "Unseen" (the design system calls it "Patrician") and the Consultancy and Hosting copy.
 
 Notes on the design:

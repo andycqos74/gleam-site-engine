@@ -68,10 +68,11 @@ export function createApp(config) {
   });
 
   // Engine assets (the editor) under /_engine; the theme's public/ folder at the site root (/css, /img, ...).
+  // Plain HTML pages there are served without .html too (public/b-ook/terms.html at /b-ook/terms).
   const statics = { maxAge: '7d', index: false };
   app.use('/_engine', express.static(path.join(ROOT, 'public'), statics));
   app.use('/media', express.static(mediaDir, { ...statics, maxAge: '365d', immutable: true }));
-  app.use(express.static(theme.publicDir, statics));
+  app.use(express.static(theme.publicDir, { ...statics, extensions: ['html'] }));
 
   app.use(express.urlencoded({ extended: false, limit: '100kb' }));
   app.use(express.json({ limit: '1mb' }));
