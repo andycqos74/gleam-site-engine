@@ -219,7 +219,7 @@ export const APPS = [
       ['Your brand', 'Fits into your own website', 'B-ook takes your colours, fonts and logo. Embed the booking calendar on your club or venue site, and customers book without leaving it.'],
     ],
     cta: { title: 'Book, pay and manage in one place.', text: '', button: ['Get started', '/#contact'] },
-    legal: [['Privacy policy', ''], ['Terms of service', '']],
+    legal: [['Privacy policy', '/b-ook/privacy'], ['Terms of service', '/b-ook/terms']],
   },
   {
     key: 'gleam',

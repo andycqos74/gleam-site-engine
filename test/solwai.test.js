@@ -80,6 +80,15 @@ test('app pages: own accent, current nav link, sections from apps.js', async () 
   assert.match(organiser, /class="cut cut-wide"/);
   assert.doesNotMatch(organiser, /cta-text/, 'an empty closing text is left out');
   for (const page of [unseen, organiser]) assert.match(page, /<section class="legal"[\s\S]*>Privacy policy<\/a>[\s\S]*>Terms of service<\/a>/);
+  const book = await (await fetch(`${base}/b-ook`)).text();
+  assert.match(book, /<section class="legal"[\s\S]*href="\/b-ook\/privacy"[^>]*>Privacy policy<\/a>[\s\S]*href="\/b-ook\/terms"[^>]*>Terms of service<\/a>/);
+  for (const [url, title] of [['/b-ook/privacy', 'B-OOK Privacy Policy'], ['/b-ook/terms', 'B-OOK Terms of Service']]) {
+    const res = await fetch(base + url);
+    assert.equal(res.status, 200);
+    const page = await res.text();
+    assert.match(page, new RegExp(`<h1>${title}</h1>`));
+    assert.match(page, /href="\/css\/legal.css"/);
+  }
   const drum = await (await fetch(`${base}/drum`)).text();
   assert.match(drum, /class="text-link"[^>]*>See how it works ↓/);
   assert.match(drum, /Why cafés choose Drum/);
