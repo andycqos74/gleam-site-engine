@@ -54,6 +54,7 @@ ${theme.stylesheets.map((href) => html`<link rel="stylesheet" href="${asset(ctx,
 ${theme.head ? theme.head(k, { page, version: ctx.version }) : ''}
 ${ctx.user ? html`<link rel="stylesheet" href="/_engine/editor.css?v=${ctx.version}">` : ''}
 ${ctx.chat ? html`<link rel="stylesheet" href="/_engine/chat.css?v=${ctx.version}">` : ''}
+${ctx.tracker ? umamiScript(ctx.tracker) : ''}
 </head>
 <body${attrs({ class: [`page-${meta.bodyClass ?? page}`, ctx.editing && 'is-editing'].filter(Boolean).join(' ') })}>
 ${theme.layout(k, { page, body })}
@@ -64,6 +65,12 @@ ${theme.scripts.map((src) => html`<script src="${asset(ctx, src)}" defer></scrip
 ${ctx.chat ? chatWidget(ctx) : ''}
 </body>
 </html>`;
+}
+
+// Umami's tracking script (see analytics.js): no cookies; ignores query strings, which can carry personal details,
+// and visitors whose browser asks not to be tracked.
+function umamiScript(t) {
+  return html`<script defer${attrs({ src: t.src, 'data-website-id': t.websiteId, 'data-domains': t.domains, 'data-exclude-search': 'true', 'data-do-not-track': 'true' })}></script>`;
 }
 
 function adminBar(ctx) {

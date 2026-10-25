@@ -180,3 +180,37 @@ body:has(.ed-drawer) .admin-bar { display: none; }
   .admin-table tr { display: block; border-bottom: 2px solid var(--ed-soft-2); }
   .admin-table td { display: block; border: 0; padding: 6px 12px; }
 }
+
+/* Admin > Visitors */
+.range-tabs { display: flex; gap: 4px; flex-wrap: wrap; background: #fff; border: 2px solid var(--ed-ink); border-radius: 999px; padding: 5px; align-self: flex-start; font-weight: 700; font-size: 15px; }
+.range-tabs a { padding: 7px 14px; border-radius: 999px; text-decoration: none; color: var(--ed-ink); }
+.range-tabs a:hover { background: var(--ed-soft); }
+.range-tabs a[aria-current] { background: var(--ed-ink); color: #fff; }
+.stats-card { align-items: stretch; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 16px; }
+.stat { display: flex; flex-direction: column; gap: 2px; }
+.stat-label { font-size: 14px; font-weight: 800; color: var(--ed-muted); }
+.stat-value { font-size: 34px; font-weight: 800; color: var(--ed-ink); line-height: 1.15; font-variant-numeric: tabular-nums; }
+.stat-was { font-size: 13px; color: var(--ed-muted); }
+.live { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; color: var(--ed-ink); }
+.live-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ed-success); box-shadow: 0 0 0 4px rgba(46, 158, 91, .2); }
+/* Scrolls sideways on narrow screens, starting at the newest end (rtl), with the chart itself left to right */
+.chart-wrap { overflow-x: auto; direction: rtl; }
+.chart-wrap > svg { direction: ltr; }
+.visitors-chart { width: 100%; min-width: 640px; height: auto; display: block; }
+.visitors-chart .chart-views { fill: var(--ed-soft-2); }
+.visitors-chart .chart-visitors { fill: var(--ed-ink); }
+.visitors-chart g:hover .chart-views { fill: var(--ed-highlight); }
+.visitors-chart .chart-grid { stroke: var(--ed-soft); stroke-width: 1; }
+.visitors-chart .chart-label { font-size: 13px; fill: var(--ed-muted); font-family: var(--ed-font); }
+.chart-key { display: flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ed-muted); }
+.chart-key .key { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+.chart-key .key-visitors { background: var(--ed-ink); }
+.chart-key .key-views { background: var(--ed-soft-2); margin-left: 12px; }
+.top-list { align-items: stretch; }
+.top-list ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.top-list li { position: relative; display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; font-size: 15px; }
+.top-bar { position: absolute; inset: 0 auto 0 0; background: var(--ed-soft); border-radius: 8px; z-index: 0; }
+.top-name, .top-count { position: relative; z-index: 1; }
+.top-name { overflow-wrap: anywhere; }
+.top-count { font-weight: 800; font-variant-numeric: tabular-nums; }

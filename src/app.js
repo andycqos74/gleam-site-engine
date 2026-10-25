@@ -11,6 +11,7 @@ import { createMailer } from './mail.js';
 import { createAssistant, cleanSettings } from './assistant.js';
 import { createKit } from './kit.js';
 import { renderDocument } from './document.js';
+import { createAnalytics, RANGES, DEFAULT_RANGE, AnalyticsError } from './analytics.js';
 import { loadTheme, ROOT } from './theme.js';
 import * as admin from './admin-pages.js';
 import { html } from './html.js';
@@ -41,6 +42,7 @@ export function createApp(config) {
     db, store, theme, config, siteName,
     digestKit: () => createKit({ theme, editing: false, fields: store.fields(), items: (c) => store.items(c), scheduled: store.scheduled }),
   });
+  const analytics = createAnalytics(config, { timeZone: theme.timeZone });
   auth.ensureAdmin();
   auth.pruneSessions();
 
@@ -49,12 +51,15 @@ export function createApp(config) {
   app.set('trust proxy', config.trustProxy ?? 'loopback, linklocal, uniquelocal');
 
   // Themes can allow extra sources, e.g. csp: { frameSrc: ['https://www.openstreetmap.org'], fontSrc: [...] }.
+  // The Umami server (if set up) may serve its tracking script and receive page views.
   const src = (base, extra = []) => [base, ...extra].join(' ');
+  const counter = analytics ? [analytics.origin] : [];
   const csp = [
     "default-src 'self'",
     `img-src ${src("'self' data: blob:", theme.csp.imgSrc)}`,
     `style-src ${src("'self' 'unsafe-inline'", theme.csp.styleSrc)}`,
-    `script-src ${src("'self'", theme.csp.scriptSrc)}`,
+    `script-src ${src("'self'", [...counter, ...(theme.csp.scriptSrc ?? [])])}`,
+    `connect-src ${src("'self'", [...counter, ...(theme.csp.connectSrc ?? [])])}`,
     `font-src ${src("'self'", theme.csp.fontSrc)}`,
     `frame-src ${theme.csp.frameSrc?.length ? theme.csp.frameSrc.join(' ') : "'none'"}`,
     "form-action 'self'", "frame-ancestors 'self'", "base-uri 'self'", "object-src 'none'",
@@ -105,6 +110,8 @@ export function createApp(config) {
       version: VERSION,
       // The chat popup stays out of the way while someone is editing.
       chat: editing ? null : assistant.widget(),
+      // Signed-in editors aren't counted as visitors.
+      tracker: req.user ? null : analytics?.tracker,
     };
   }
 
@@ -266,7 +273,7 @@ export function createApp(config) {
   });
 
   // ---------- admin ----------
-  const adminCtx = (req, flash) => ({ user: req.user, csrf: req.csrf, version: VERSION, flash, siteName: siteName(), logo: theme.adminLogo ?? theme.favicon, theme });
+  const adminCtx = (req, flash) => ({ user: req.user, csrf: req.csrf, version: VERSION, flash, siteName: siteName(), logo: theme.adminLogo ?? theme.favicon, theme, analytics: !!analytics });
   const sendHtml = (res, page) => res.set('Cache-Control', 'no-store').type('html').send(String(page));
   const safeNext = (n) => (typeof n === 'string' && /^\/(?![/\\])/.test(n) ? n : '/admin');
 
@@ -305,6 +312,21 @@ export function createApp(config) {
   adminRouter.get('/', (req, res) => {
     const { n } = db.prepare('SELECT COUNT(*) AS n FROM messages WHERE handled = 0').get();
     sendHtml(res, admin.dashboard(adminCtx(req), { unread: n }));
+  });
+
+  adminRouter.get('/visitors', async (req, res) => {
+    const range = Object.hasOwn(RANGES, req.query.range) ? req.query.range : DEFAULT_RANGE;
+    let report = null; let error = null;
+    if (analytics) {
+      try {
+        report = await analytics.report(range);
+      } catch (e) {
+        if (!(e instanceof AnalyticsError)) throw e;
+        console.error('Visitor statistics:', e.message);
+        error = e.message;
+      }
+    }
+    sendHtml(res, admin.visitorsPage(adminCtx(req), { analytics, range, report, error }));
   });
 
   // ?show=form or ?show=phone narrows the list to website or phone messages; the buttons keep that view.
@@ -495,5 +517,6 @@ export function createApp(config) {
   app.locals.db = db;
   app.locals.store = store;
   app.locals.theme = theme;
+  app.locals.analytics = analytics;
   return app;
 }
