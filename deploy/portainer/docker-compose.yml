@@ -12,7 +12,7 @@
 
 services:
   web:
-    image: ghcr.io/andycqos74/gleam-site-engine:${APP_TAG}
+    image: ghcr.io/andycqos74/gleam-site-engine:${APP_TAG:-latest}
     restart: unless-stopped
     environment:
       THEME: ${THEME:-qos}
@@ -26,6 +26,14 @@ services:
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      VOICE_API_TOKEN: ${VOICE_API_TOKEN:-}
+      UMAMI_URL: ${UMAMI_URL:-}
+      UMAMI_WEBSITE_ID: ${UMAMI_WEBSITE_ID:-}
+      UMAMI_USERNAME: ${UMAMI_USERNAME:-}
+      UMAMI_PASSWORD: ${UMAMI_PASSWORD:-}
+      UMAMI_API_KEY: ${UMAMI_API_KEY:-}
+      UMAMI_API_URL: ${UMAMI_API_URL:-}
+      UMAMI_SCRIPT_NAME: ${UMAMI_SCRIPT_NAME:-script.js}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       # Visitor chat assistant (Claude). Off until a key is set; each site then turns it on and writes its own
       # instructions under Admin > Chat assistant.

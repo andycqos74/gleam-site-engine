@@ -30,5 +30,18 @@ export function loadConfig(env = process.env) {
     assistantEffort: ['low', 'medium', 'high', 'xhigh', 'max'].includes(env.ASSISTANT_EFFORT) ? env.ASSISTANT_EFFORT : 'medium',
     // Visitor messages per conversation before they're asked to start a new one.
     assistantMaxMessages: Number(env.ASSISTANT_MAX_MESSAGES || 30),
+    // Shared secret the AI voice agent sends to deliver phone messages into Admin > Messages. Blank = off.
+    voiceApiToken: (env.VOICE_API_TOKEN || '').trim(),
+    // Visitor statistics from an Umami server (see analytics.js). UMAMI_URL + UMAMI_WEBSITE_ID add the tracking
+    // script; an API key or a username/password also lets Admin > Visitors show the figures.
+    umami: {
+      url: (env.UMAMI_URL || '').trim().replace(/\/+$/, ''),
+      websiteId: (env.UMAMI_WEBSITE_ID || '').trim(),
+      apiUrl: (env.UMAMI_API_URL || '').trim().replace(/\/+$/, ''),
+      apiKey: (env.UMAMI_API_KEY || '').trim(),
+      username: (env.UMAMI_USERNAME || '').trim(),
+      password: (env.UMAMI_PASSWORD || '').trim().replace(/^(['"])(.*)\1$/, '$2'),
+      scriptName: (env.UMAMI_SCRIPT_NAME || 'script.js').trim().replace(/^\/+/, ''),
+    },
   };
 }

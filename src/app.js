@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { openDb, now } from './db.js';
@@ -10,6 +11,7 @@ import { createMailer } from './mail.js';
 import { createAssistant, cleanSettings } from './assistant.js';
 import { createKit } from './kit.js';
 import { renderDocument } from './document.js';
+import { createAnalytics, RANGES, DEFAULT_RANGE, AnalyticsError } from './analytics.js';
 import { loadTheme, ROOT } from './theme.js';
 import * as admin from './admin-pages.js';
 import { html } from './html.js';
@@ -17,6 +19,7 @@ import { html } from './html.js';
 const VERSION = Date.now().toString(36);
 const EDIT_COOKIE = 'site_edit';
 const EMAIL_RE = /^[^\s@<>()[\],;:"]+@[^\s@<>()[\],;:"]+\.[a-z]{2,}$/i;
+const sha256 = (s) => crypto.createHash('sha256').update(s).digest();
 
 // Loads the theme named in config (THEME / THEME_DIR) and builds the site.
 export async function createSite(config) {
@@ -39,6 +42,7 @@ export function createApp(config) {
     db, store, theme, config, siteName,
     digestKit: () => createKit({ theme, editing: false, fields: store.fields(), items: (c) => store.items(c), scheduled: store.scheduled }),
   });
+  const analytics = createAnalytics(config, { timeZone: theme.timeZone });
   auth.ensureAdmin();
   auth.pruneSessions();
 
@@ -47,12 +51,15 @@ export function createApp(config) {
   app.set('trust proxy', config.trustProxy ?? 'loopback, linklocal, uniquelocal');
 
   // Themes can allow extra sources, e.g. csp: { frameSrc: ['https://www.openstreetmap.org'], fontSrc: [...] }.
+  // The Umami server (if set up) may serve its tracking script and receive page views.
   const src = (base, extra = []) => [base, ...extra].join(' ');
+  const counter = analytics ? [analytics.origin] : [];
   const csp = [
     "default-src 'self'",
     `img-src ${src("'self' data: blob:", theme.csp.imgSrc)}`,
     `style-src ${src("'self' 'unsafe-inline'", theme.csp.styleSrc)}`,
-    `script-src ${src("'self'", theme.csp.scriptSrc)}`,
+    `script-src ${src("'self'", [...counter, ...(theme.csp.scriptSrc ?? [])])}`,
+    `connect-src ${src("'self'", [...counter, ...(theme.csp.connectSrc ?? [])])}`,
     `font-src ${src("'self'", theme.csp.fontSrc)}`,
     `frame-src ${theme.csp.frameSrc?.length ? theme.csp.frameSrc.join(' ') : "'none'"}`,
     "form-action 'self'", "frame-ancestors 'self'", "base-uri 'self'", "object-src 'none'",
@@ -103,6 +110,8 @@ export function createApp(config) {
       version: VERSION,
       // The chat popup stays out of the way while someone is editing.
       chat: editing ? null : assistant.widget(),
+      // Signed-in editors aren't counted as visitors.
+      tracker: req.user ? null : analytics?.tracker,
     };
   }
 
@@ -197,6 +206,64 @@ export function createApp(config) {
     res.set('Cache-Control', 'no-store').status(reply.error && !reply.conversationId ? 400 : 200).json(reply);
   });
 
+  // Phone messages from the AI voice agent, stored alongside contact form messages (Admin > Messages) and emailed the
+  // same way. Off unless VOICE_API_TOKEN is set; the agent sends it as "Authorization: Bearer <token>". "ref" is the
+  // agent's own ID for the message, so a delivery it retries isn't stored twice.
+  const voiceToken = config.voiceApiToken ? sha256(config.voiceApiToken) : null;
+  const voiceFailures = new Map();
+  app.post('/api/inbound/voice-message', (req, res) => {
+    if (!voiceToken) return res.status(404).json({ error: 'Not found' });
+    const ip = req.ip;
+    const failed = (voiceFailures.get(ip) ?? []).filter((t) => t > Date.now() - 15 * 60e3);
+    if (failed.length >= 20) return res.status(429).json({ error: 'Too many failed attempts. Try again later.' });
+    const sent = /^Bearer (.+)$/.exec(req.get('authorization') ?? '')?.[1];
+    if (!sent || !crypto.timingSafeEqual(sha256(sent), voiceToken)) {
+      voiceFailures.set(ip, [...failed, Date.now()]);
+      return res.status(401).json({ error: 'Wrong or missing token.' });
+    }
+
+    const b = req.body;
+    const text = (v, max) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+    const msg = {
+      ref: text(b.ref, 100),
+      name: text(b.name, 200) ?? 'Unknown caller',
+      phone: text(b.phone, 30),
+      topic: text(b.topic, 100),
+      message: text(b.message, 5000),
+      urgency: b.urgency ?? 'normal',
+      preferredTime: text(b.preferred_time, 200),
+      needsReview: b.needs_review === true,
+      transcriptUrl: text(b.transcript_url, 500),
+      at: b.at == null ? now() : new Date(b.at),
+    };
+    const errors = {};
+    if (!msg.ref || !/^[\w.:#-]+$/.test(msg.ref)) errors.ref = 'Give a reference of letters, numbers and . : # _ - only.';
+    if (!msg.message) errors.message = 'The message is empty.';
+    if (msg.phone && !/^\+?[\d ()-]{3,30}$/.test(msg.phone)) errors.phone = 'That isn\'t a phone number.';
+    if (!['low', 'normal', 'urgent'].includes(msg.urgency)) errors.urgency = 'Urgency must be low, normal or urgent.';
+    if (msg.transcriptUrl && !/^https?:\/\//i.test(msg.transcriptUrl)) errors.transcript_url = 'The transcript link must start with https://.';
+    if (msg.at instanceof Date) {
+      if (Number.isNaN(msg.at.getTime())) errors.at = 'That isn\'t a date and time.';
+      else msg.at = msg.at.toISOString();
+    }
+    if (Object.keys(errors).length) return res.status(422).json({ errors });
+
+    const { changes, lastInsertRowid } = db.prepare(`INSERT INTO messages
+      (at, name, email, topic, message, source, phone, urgency, preferred_time, ref, transcript_url, needs_review)
+      VALUES (?, ?, '', ?, ?, 'phone', ?, ?, ?, ?, ?, ?) ON CONFLICT (ref) DO NOTHING`)
+      .run(msg.at, msg.name, msg.topic, msg.message, msg.phone, msg.urgency, msg.preferredTime, msg.ref, msg.transcriptUrl, msg.needsReview ? 1 : 0);
+    if (!changes) {
+      const { id } = db.prepare('SELECT id FROM messages WHERE ref = ?').get(msg.ref);
+      return res.json({ ok: true, id, duplicate: true });
+    }
+    if (mailer) {
+      mailer.sendPhone(msg, siteName())
+        .then(() => db.prepare('UPDATE messages SET emailed = 1 WHERE id = ?').run(lastInsertRowid))
+        .catch((e) => console.error('Phone message email failed:', e.message));
+    }
+    res.status(201).json({ ok: true, id: Number(lastInsertRowid) });
+  });
+
   app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /api\nDisallow: /_chat\n${config.baseUrl ? `Sitemap: ${config.baseUrl}/sitemap.xml\n` : ''}`));
   app.get('/sitemap.xml', (req, res) => {
     const base = config.baseUrl || `${req.protocol}://${req.get('host')}`;
@@ -206,7 +273,7 @@ export function createApp(config) {
   });
 
   // ---------- admin ----------
-  const adminCtx = (req, flash) => ({ user: req.user, csrf: req.csrf, version: VERSION, flash, siteName: siteName(), logo: theme.adminLogo ?? theme.favicon, theme });
+  const adminCtx = (req, flash) => ({ user: req.user, csrf: req.csrf, version: VERSION, flash, siteName: siteName(), logo: theme.adminLogo ?? theme.favicon, theme, analytics: !!analytics });
   const sendHtml = (res, page) => res.set('Cache-Control', 'no-store').type('html').send(String(page));
   const safeNext = (n) => (typeof n === 'string' && /^\/(?![/\\])/.test(n) ? n : '/admin');
 
@@ -247,17 +314,37 @@ export function createApp(config) {
     sendHtml(res, admin.dashboard(adminCtx(req), { unread: n }));
   });
 
+  adminRouter.get('/visitors', async (req, res) => {
+    const range = Object.hasOwn(RANGES, req.query.range) ? req.query.range : DEFAULT_RANGE;
+    let report = null; let error = null;
+    if (analytics) {
+      try {
+        report = await analytics.report(range);
+      } catch (e) {
+        if (!(e instanceof AnalyticsError)) throw e;
+        console.error('Visitor statistics:', e.message);
+        error = e.message;
+      }
+    }
+    sendHtml(res, admin.visitorsPage(adminCtx(req), { analytics, range, report, error }));
+  });
+
+  // ?show=form or ?show=phone narrows the list to website or phone messages; the buttons keep that view.
+  const messagesView = (show) => (['form', 'phone'].includes(show) ? show : '');
+  const messagesUrl = (show) => `/admin/messages${messagesView(show) ? `?show=${show}` : ''}`;
   adminRouter.get('/messages', (req, res) => {
-    const messages = db.prepare('SELECT * FROM messages ORDER BY handled, id DESC LIMIT 500').all();
-    sendHtml(res, admin.messagesPage(adminCtx(req), { messages }));
+    const show = messagesView(req.query.show);
+    const messages = db.prepare(`SELECT * FROM messages ${show ? 'WHERE source = ?' : ''} ORDER BY handled, id DESC LIMIT 500`)
+      .all(...(show ? [show] : []));
+    sendHtml(res, admin.messagesPage(adminCtx(req), { messages, show }));
   });
   adminRouter.post('/messages/:id', (req, res) => {
     db.prepare('UPDATE messages SET handled = ? WHERE id = ?').run(req.body.handled === '1' ? 1 : 0, Number(req.params.id));
-    res.redirect(303, '/admin/messages');
+    res.redirect(303, messagesUrl(req.body.show));
   });
   adminRouter.post('/messages/:id/delete', (req, res) => {
     db.prepare('DELETE FROM messages WHERE id = ?').run(Number(req.params.id));
-    res.redirect(303, '/admin/messages');
+    res.redirect(303, messagesUrl(req.body.show));
   });
 
   adminRouter.get('/history', (req, res) => sendHtml(res, admin.historyPage(adminCtx(req), { revisions: store.revisions() })));
@@ -430,5 +517,6 @@ export function createApp(config) {
   app.locals.db = db;
   app.locals.store = store;
   app.locals.theme = theme;
+  app.locals.analytics = analytics;
   return app;
 }

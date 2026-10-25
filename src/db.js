@@ -79,7 +79,32 @@ export function openDb(dataDir) {
   db.pragma('foreign_keys = ON');
   db.pragma('busy_timeout = 5000');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+// Columns added after the first release. Each is added once, to databases created before it existed.
+const ADDED_COLUMNS = {
+  // Phone messages from the AI voice agent (POST /api/inbound/voice-message) share the messages table.
+  messages: {
+    source: "TEXT NOT NULL DEFAULT 'form'",
+    phone: 'TEXT',
+    urgency: 'TEXT',
+    preferred_time: 'TEXT',
+    ref: 'TEXT',
+    transcript_url: 'TEXT',
+    needs_review: 'INTEGER NOT NULL DEFAULT 0',
+  },
+};
+
+function migrate(db) {
+  for (const [table, cols] of Object.entries(ADDED_COLUMNS)) {
+    const have = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
+    for (const [name, type] of Object.entries(cols)) {
+      if (!have.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+    }
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS messages_ref ON messages (ref)');
 }
 
 export const now = () => new Date().toISOString();
