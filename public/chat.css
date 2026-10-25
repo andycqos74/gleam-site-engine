@@ -1,0 +1,100 @@
+/* Chat assistant popup (public/chat.js). Self-contained, so it sits on any theme: it uses the page's font and one
+   accent colour (--gchat-accent, set per site under Admin > Chat assistant). */
+.gchat {
+  --gchat-accent: #1e2252;
+  --gchat-ink: #1d2233;
+  --gchat-muted: #636a80;
+  --gchat-line: #dfe3ec;
+  --gchat-paper: #f6f7fa;
+  --gchat-r: 14px;
+  --gchat-ease: cubic-bezier(.2, .7, .3, 1);
+  position: fixed; right: 24px; bottom: 24px; z-index: 900;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 14px;
+  font-family: inherit; font-size: 15px; line-height: 1.5; color: var(--gchat-ink);
+}
+.gchat *, .gchat *::before, .gchat *::after { box-sizing: border-box; }
+.gchat button { font: inherit; }
+.gchat-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Launcher */
+.gchat-launcher { position: relative; display: grid; place-items: center; width: 60px; height: 60px; padding: 0; border: 0; border-radius: 50%; background: var(--gchat-accent); color: #fff; cursor: pointer; box-shadow: 0 10px 30px rgba(15, 20, 40, .25); transition: transform .15s var(--gchat-ease), filter .15s var(--gchat-ease); }
+.gchat-launcher:hover { filter: brightness(1.15); }
+.gchat-launcher:active { transform: scale(.96); }
+.gchat-launcher:focus-visible, .gchat-icon:focus-visible, .gchat-send:focus-visible, .gchat-chip:focus-visible, .gchat-teaser-body:focus-visible { outline: 3px solid var(--gchat-accent); outline-offset: 3px; }
+.gchat-launcher > span { grid-area: 1 / 1; display: grid; transition: opacity .2s var(--gchat-ease), transform .2s var(--gchat-ease); }
+.gchat-launcher .i-close { opacity: 0; transform: rotate(-90deg) scale(.6); }
+.gchat.open .gchat-launcher .i-open { opacity: 0; transform: rotate(90deg) scale(.6); }
+.gchat.open .gchat-launcher .i-close { opacity: 1; transform: none; }
+.gchat-count { position: absolute; top: -2px; right: -2px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #c62d1f; color: #fff; font-size: 11px; font-weight: 700; line-height: 20px; text-align: center; box-shadow: 0 0 0 2px #fff; }
+.gchat-count[hidden] { display: none; }
+
+/* Teaser */
+.gchat-teaser { position: relative; max-width: 290px; opacity: 0; transform: translateY(8px); transition: opacity .2s var(--gchat-ease), transform .2s var(--gchat-ease); }
+.gchat-teaser.in { opacity: 1; transform: none; }
+.gchat-teaser[hidden] { display: none; }
+.gchat-teaser-body { display: block; width: 100%; padding: 14px 16px; border: 1px solid var(--gchat-line); border-radius: var(--gchat-r); background: #fff; color: var(--gchat-muted); font-size: 14px; line-height: 1.45; text-align: left; cursor: pointer; box-shadow: 0 10px 30px rgba(15, 20, 40, .18); }
+.gchat-teaser-body strong { display: block; margin-bottom: 2px; color: var(--gchat-ink); }
+.gchat-teaser-x { position: absolute; top: -10px; right: -10px; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 1px solid var(--gchat-line); border-radius: 50%; background: #fff; color: var(--gchat-muted); cursor: pointer; }
+.gchat-teaser-x svg { width: 12px; height: 12px; }
+
+/* Panel */
+.gchat-panel { width: 380px; max-width: calc(100vw - 32px); height: 600px; max-height: calc(100vh - 120px); display: flex; flex-direction: column; background: #fff; border: 1px solid var(--gchat-line); border-radius: var(--gchat-r); box-shadow: 0 16px 48px rgba(15, 20, 40, .25); overflow: hidden; transform-origin: bottom right; opacity: 0; transform: translateY(24px) scale(.15); transition: opacity .2s var(--gchat-ease), transform .2s var(--gchat-ease); }
+.gchat.open .gchat-panel { opacity: 1; transform: none; }
+.gchat-panel[hidden] { display: none; }
+.gchat-head { display: flex; align-items: center; gap: 6px; padding: 14px 10px 14px 18px; background: var(--gchat-accent); color: #fff; }
+.gchat-head-text { flex: 1; min-width: 0; }
+.gchat-title { font-weight: 800; font-size: 17px; line-height: 1.2; }
+.gchat-status { margin-top: 3px; font-size: 12px; opacity: .8; }
+.gchat-icon { display: grid; place-items: center; flex: none; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; opacity: .85; }
+.gchat-icon:hover { background: rgba(255, 255, 255, .15); opacity: 1; }
+
+/* Messages */
+.gchat-log { flex: 1; overflow-y: auto; padding: 18px 16px; display: flex; flex-direction: column; gap: 12px; background: var(--gchat-paper); }
+.gchat-row { display: flex; max-width: 88%; }
+.gchat-row.me { align-self: flex-end; }
+.gchat-msg { padding: 10px 14px 8px; border-radius: var(--gchat-r); font-size: 14px; overflow-wrap: anywhere; }
+.gchat-row.bot .gchat-msg { background: #fff; border: 1px solid var(--gchat-line); border-bottom-left-radius: 4px; }
+.gchat-row.me .gchat-msg { background: var(--gchat-accent); color: #fff; border-bottom-right-radius: 4px; }
+.gchat-row.err .gchat-msg { background: #fdecea; color: #8a1c12; border-bottom-left-radius: 4px; }
+.gchat-body p, .gchat-body ul { margin: 0 0 8px; }
+.gchat-body ul { padding-left: 20px; }
+.gchat-body > :last-child { margin-bottom: 0; }
+.gchat-body .gchat-h { font-weight: 800; font-size: 15px; }
+.gchat-body a { color: var(--gchat-accent); font-weight: 700; text-decoration: underline; }
+.gchat-row.me .gchat-body a { color: #fff; }
+.gchat-time { display: block; margin-top: 4px; text-align: right; font-size: 11px; opacity: .6; }
+.gchat-suggest { display: flex; flex-wrap: wrap; gap: 8px; }
+.gchat-chip { padding: 8px 12px; border: 1px solid var(--gchat-accent); border-radius: 999px; background: #fff; color: var(--gchat-accent); font-size: 13px; font-weight: 700; line-height: 1.3; text-align: left; cursor: pointer; }
+.gchat-chip:hover { background: var(--gchat-accent); color: #fff; }
+.gchat-typing { display: inline-flex; gap: 5px; padding: 14px 16px; background: #fff; border: 1px solid var(--gchat-line); border-radius: var(--gchat-r); border-bottom-left-radius: 4px; }
+.gchat-typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--gchat-accent); animation: gchat-dot 1.2s ease-in-out infinite; }
+.gchat-typing i:nth-child(2) { animation-delay: .15s; }
+.gchat-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes gchat-dot { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
+
+/* Composer */
+.gchat-form { padding: 12px 14px; border-top: 1px solid var(--gchat-line); background: #fff; }
+.gchat-compose { position: relative; border: 1px solid #c4cad8; border-radius: 12px; background: #fff; }
+.gchat-compose:focus-within { border-color: var(--gchat-accent); box-shadow: 0 0 0 3px rgba(30, 34, 82, .12); }
+.gchat-compose textarea { display: block; width: 100%; min-height: 64px; max-height: 160px; resize: none; margin: 0; padding: 12px 60px 12px 14px; border: 0; border-radius: 12px; background: transparent; font: inherit; font-size: 15px; line-height: 1.45; color: var(--gchat-ink); }
+.gchat-compose textarea:focus { outline: 0; }
+.gchat-send { position: absolute; right: 8px; bottom: 8px; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--gchat-accent); color: #fff; cursor: pointer; }
+.gchat-send:disabled { opacity: .45; cursor: default; }
+.gchat-note { margin: 0; padding: 0 14px calc(10px + env(safe-area-inset-bottom, 0px)); background: #fff; font-size: 11px; line-height: 1.35; color: var(--gchat-muted); }
+
+/* Keep clear of the editors' bar at the bottom of the page */
+.admin-bar ~ .gchat { bottom: 84px; }
+
+@media (max-width: 600px) {
+  .gchat { right: 16px; bottom: 16px; }
+  .gchat.open { inset: 0; }
+  .gchat.open .gchat-launcher, .gchat.open .gchat-teaser { display: none; }
+  .gchat-panel { width: 100%; max-width: none; height: 100%; max-height: none; border: 0; border-radius: 0; }
+  .gchat-teaser { max-width: calc(100vw - 32px); }
+  .admin-bar ~ .gchat:not(.open) { bottom: 120px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gchat-panel, .gchat-teaser, .gchat-launcher > span { transition: none; }
+  .gchat-typing i { animation: none; }
+}
+@media print { .gchat { display: none; } }

@@ -1,6 +1,6 @@
 // Admin screens (sign-in, messages, history, people, account). They use only the engine's stylesheet
 // (/_engine/editor.css, scoped under .admin-page), so they look the same whatever theme a site runs.
-import { html, attrs, paragraphs } from './html.js';
+import { html, raw, attrs, paragraphs } from './html.js';
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/London' }) : '');
 const csrfInput = (ctx) => html`<input type="hidden" name="_csrf" value="${ctx.csrf}">`;
@@ -24,7 +24,7 @@ ${ctx.logo ? html`<link rel="icon" href="${ctx.logo}">` : ''}
     <a href="/admin">Home</a>
     <a href="/admin/messages">Messages</a>
     <a href="/admin/history">Change history</a>
-    ${u.role === 'admin' ? html`<a href="/admin/users">People</a>` : ''}
+    ${u.role === 'admin' ? html`<a href="/admin/assistant">Chat assistant</a><a href="/admin/users">People</a>` : ''}
     <a href="/admin/account">My account</a>
     <form method="post" action="/admin/logout">${csrfInput(ctx)}<button class="link-btn">Sign out</button></form>
   </nav>` : ''}
@@ -71,6 +71,11 @@ export function dashboard(ctx, { unread }) {
     <p>${unread ? `${unread} contact form message${unread === 1 ? '' : 's'} not yet marked as dealt with.` : 'No new contact form messages.'}</p>
     <a class="btn btn-outline" href="/admin/messages">View messages</a>
   </div>
+  ${ctx.user.role === 'admin' ? html`<div class="admin-card">
+    <h2>Chat assistant</h2>
+    <p>The AI chat popup that answers visitors' questions about the site. Turn it on, name it, and write its instructions.</p>
+    <a class="btn btn-outline" href="/admin/assistant">Chat assistant settings</a>
+  </div>` : ''}
   <div class="admin-card">
     <h2>Made a mistake?</h2>
     <p>Every change is recorded. Use the change history to put back what was there before.</p>
@@ -198,5 +203,51 @@ export function accountPage(ctx, { error, forced } = {}) {
   </form>
   ${forced ? html`<form method="post" action="/admin/logout">${csrfInput(ctx)}<button class="link-btn">Sign out</button></form>` : ''}
 </div>`,
+  });
+}
+
+const checkbox = (name, on, label) => html`<label class="admin-check"><input type="checkbox" name="${name}" value="1"${on ? raw(' checked') : ''}> ${label}</label>`;
+
+export function assistantPage(ctx, { settings: s, hasKey, model, effort, digestSize, chats }) {
+  const live = hasKey && s.enabled;
+  return adminLayout(ctx, {
+    title: 'Chat assistant',
+    body: html`<h1 class="admin-h1">Chat assistant</h1>
+<p>A chat popup in the bottom corner of every page, where visitors ask questions about ${ctx.siteName} and an AI assistant (Claude, by Anthropic) answers from the words on this website and anything you add below. These settings belong to this site only.</p>
+<div class="admin-card notice">
+  <p><strong>Status: ${live ? 'on, visitors can see it.' : !hasKey ? 'off: the server has no API key.' : 'off: turned off below.'}</strong></p>
+  ${hasKey
+    ? html`<p class="muted">Model <code>${model}</code>, effort <code>${effort}</code>. These and the API key are set on the server (<code>ANTHROPIC_API_KEY</code>, <code>ASSISTANT_MODEL</code>, <code>ASSISTANT_EFFORT</code> in the site's stack).</p>`
+    : html`<p>Ask whoever runs the server to add <code>ANTHROPIC_API_KEY</code> to this site's stack and redeploy. You can get everything ready here first.</p>`}
+</div>
+<form method="post" action="/admin/assistant" class="admin-form admin-card wide">
+  ${csrfInput(ctx)}
+  <h2>How it looks</h2>
+  ${checkbox('enabled', s.enabled, 'Show the chat assistant to visitors')}
+  <label>Name (shown as "Ask …")<input name="name" maxlength="60" value="${s.name}" required></label>
+  <label>Line under the name<input name="status" maxlength="80" value="${s.status}"></label>
+  <label>Greeting (the first message in the chat)<textarea name="greeting" rows="3" maxlength="500">${s.greeting}</textarea></label>
+  <label>Pop-up teaser (shown once next to the chat button; leave blank for none)<input name="teaser" maxlength="160" value="${s.teaser}"></label>
+  <label>Suggested questions (one per line, up to four; shown as buttons before the first question)<textarea name="suggestions" rows="4" maxlength="1000">${s.suggestions}</textarea></label>
+  <label>Note under the message box<input name="disclaimer" maxlength="300" value="${s.disclaimer}"></label>
+  <label>Button colour (blank for the standard dark blue; e.g. #1f5fbf)<input name="accent" maxlength="7" value="${s.accent}" placeholder="#1e2252" pattern="#[0-9a-fA-F]{6}"></label>
+
+  <h2>What it knows and how it answers</h2>
+  ${checkbox('siteContent', s.siteContent, html`Use the words on this website as its knowledge (currently about ${Math.round(digestSize / 1000)}k characters; it updates as soon as the site is edited)`)}
+  <label>Extra information (facts that aren't on the site: opening hours, parking, FAQs, prices, who to contact for what)<textarea name="knowledge" rows="10" maxlength="50000">${s.knowledge}</textarea></label>
+  <label>Instructions (who the assistant is, what it should and shouldn't do, its tone). Clear the box and save to go back to the standard instructions.<textarea name="instructions" rows="16" maxlength="20000">${s.instructions}</textarea></label>
+  <button class="btn btn-navy">Save</button>
+</form>
+
+<h2 class="admin-h2">Recent questions</h2>
+<p>The latest 100 questions visitors asked and the answers they got, to help you improve the instructions and extra information. Kept for 90 days.</p>
+${chats.length ? html`<table class="admin-table">
+<thead><tr><th>When</th><th>Question</th><th>Answer</th></tr></thead>
+<tbody>
+${chats.map((c) => html`<tr><td>${when(c.at)}</td><td>${paragraphs(c.question)}</td><td class="muted">${paragraphs(c.answer)}</td></tr>`)}
+</tbody>
+</table>
+<form method="post" action="/admin/assistant/clear" data-confirm="Delete every logged question and answer?">${csrfInput(ctx)}<button class="link-btn danger">Clear the log</button></form>` : html`<p class="muted">No questions yet.</p>`}
+<script src="/_engine/admin.js?v=${ctx.version}" defer></script>`,
   });
 }

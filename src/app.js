@@ -7,6 +7,7 @@ import { createStore, ValidationError } from './content/store.js';
 import { createAuth, hashPassword, verifyPassword, passwordProblem, randomPassword } from './auth.js';
 import { createMedia } from './media.js';
 import { createMailer } from './mail.js';
+import { createAssistant, cleanSettings } from './assistant.js';
 import { createKit } from './kit.js';
 import { renderDocument } from './document.js';
 import { loadTheme, ROOT } from './theme.js';
@@ -33,6 +34,11 @@ export function createApp(config) {
   const mediaDir = config.mediaDir ?? path.join(config.dataDir, 'media');
   const media = createMedia(db, mediaDir);
   const mailer = createMailer(config);
+  const siteName = () => store.fields()['site.name'] ?? theme.name;
+  const assistant = createAssistant({
+    db, store, theme, config, siteName,
+    digestKit: () => createKit({ theme, editing: false, fields: store.fields(), items: (c) => store.items(c), scheduled: store.scheduled }),
+  });
   auth.ensureAdmin();
   auth.pruneSessions();
 
@@ -95,6 +101,8 @@ export function createApp(config) {
       query: req.query,
       baseUrl: config.baseUrl,
       version: VERSION,
+      // The chat popup stays out of the way while someone is editing.
+      chat: editing ? null : assistant.widget(),
     };
   }
 
@@ -172,7 +180,24 @@ export function createApp(config) {
     res.redirect(303, `${contactPath}?sent=1`);
   });
 
-  app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /api\n${config.baseUrl ? `Sitemap: ${config.baseUrl}/sitemap.xml\n` : ''}`));
+  // Chat assistant (src/assistant.js): JSON in ({ conversationId, message }), JSON out ({ conversationId, text } or
+  // { error }). Same-site only, and at most 30 questions an hour from one address.
+  const chatHits = new Map();
+  app.post('/_chat', async (req, res) => {
+    if (!assistant.widget()) return res.status(404).json({ error: 'The chat assistant is turned off.' });
+    const origin = req.get('origin');
+    if (origin && origin !== `${req.protocol}://${req.get('host')}` && origin !== config.baseUrl) return res.status(403).json({ error: 'Not allowed.' });
+    if (!req.is('application/json')) return res.status(415).json({ error: 'Send JSON.' });
+    const hits = (chatHits.get(req.ip) ?? []).filter((t) => t > Date.now() - 3600e3);
+    if (hits.length >= 30) return res.status(429).json({ error: 'You have asked a lot of questions in the last hour. Please try again later, or get in touch with us directly.' });
+    hits.push(Date.now());
+    chatHits.set(req.ip, hits);
+    if (chatHits.size > 10000) chatHits.clear();
+    const reply = await assistant.send(req.body.conversationId, req.body.message);
+    res.set('Cache-Control', 'no-store').status(reply.error && !reply.conversationId ? 400 : 200).json(reply);
+  });
+
+  app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /api\nDisallow: /_chat\n${config.baseUrl ? `Sitemap: ${config.baseUrl}/sitemap.xml\n` : ''}`));
   app.get('/sitemap.xml', (req, res) => {
     const base = config.baseUrl || `${req.protocol}://${req.get('host')}`;
     const k = createKit({ theme, editing: false, fields: store.fields(), items: (c) => store.items(c), scheduled: store.scheduled });
@@ -181,7 +206,6 @@ export function createApp(config) {
   });
 
   // ---------- admin ----------
-  const siteName = () => store.fields()['site.name'] ?? theme.name;
   const adminCtx = (req, flash) => ({ user: req.user, csrf: req.csrf, version: VERSION, flash, siteName: siteName(), logo: theme.adminLogo ?? theme.favicon, theme });
   const sendHtml = (res, page) => res.set('Cache-Control', 'no-store').type('html').send(String(page));
   const safeNext = (n) => (typeof n === 'string' && /^\/(?![/\\])/.test(n) ? n : '/admin');
@@ -303,6 +327,26 @@ export function createApp(config) {
       default:
     }
     res.redirect(303, '/admin/users');
+  });
+
+  const assistantPage = (req, res, { flash, settings, status = 200 } = {}) => sendHtml(res.status(status), admin.assistantPage(adminCtx(req, flash), {
+    settings: settings ?? assistant.settings(),
+    hasKey: assistant.hasKey,
+    model: assistant.model,
+    effort: assistant.effort,
+    digestSize: assistant.digest().length,
+    chats: assistant.recent(),
+  }));
+  adminRouter.get('/assistant', auth.requireAdmin, (req, res) => assistantPage(req, res));
+  adminRouter.post('/assistant', auth.requireAdmin, (req, res) => {
+    const { settings, error } = cleanSettings(req.body, siteName());
+    if (error) return assistantPage(req, res, { flash: error, settings, status: 400 });
+    assistant.saveSettings(settings);
+    assistantPage(req, res, { flash: settings.enabled && !assistant.hasKey ? 'Saved. The assistant will appear once the server has an API key (see below).' : 'Saved.' });
+  });
+  adminRouter.post('/assistant/clear', auth.requireAdmin, (req, res) => {
+    assistant.clearLog();
+    assistantPage(req, res, { flash: 'The conversation log has been cleared.' });
   });
 
   app.use('/admin', adminRouter);

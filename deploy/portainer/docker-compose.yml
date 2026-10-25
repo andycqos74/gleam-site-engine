@@ -27,6 +27,11 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      # Visitor chat assistant (Claude). Off until a key is set; each site then turns it on and writes its own
+      # instructions under Admin > Chat assistant.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-claude-opus-5-5}
+      ASSISTANT_EFFORT: ${ASSISTANT_EFFORT:-medium}
     volumes:
       - site-data:/data
       # A custom theme kept on the server instead of built into the image: uncomment, set THEME to its folder name,
