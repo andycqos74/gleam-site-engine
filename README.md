@@ -262,7 +262,8 @@ storing IP addresses. Gleam adds two things:
 - **The tracking script.** With `UMAMI_URL` and `UMAMI_WEBSITE_ID` set, every public page loads Umami's script, and the
   site's Content-Security-Policy allows the Umami server. Signed-in editors are not counted. The script is set to
   ignore query strings (they can carry personal details) and visitors whose browser sends *Do Not Track*, and
-  `data-domains` limits counting to the `BASE_URL` host, so test copies of a site don't count.
+  `data-domains` limits counting to the `BASE_URL` host and its `www.` / bare-domain twin, so test copies of a site
+  don't count.
 - **Admin → Visitors**, showing the site's figures read from the Umami API by the server (the Umami login never
   reaches a browser, and figures are cached for five minutes). If Umami is unreachable the page says why; the public
   site is unaffected.

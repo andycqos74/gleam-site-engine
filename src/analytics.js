@@ -203,6 +203,13 @@ export function createAnalytics(config, { fetch = globalThis.fetch, timeZone = '
     return data;
   }
 
+  // The BASE_URL host and its www / bare-domain twin: a site often answers on both (solwai.co.uk and
+  // www.solwai.co.uk), and Umami silently ignores visits to any host not listed.
+  function siteHosts(host) {
+    const twin = host.startsWith('www.') ? host.slice(4) : `www.${host}`;
+    return /^[\d.]+$|^localhost$|:/.test(host) ? host : `${host},${twin}`;
+  }
+
   return {
     origin,
     canReport,
@@ -211,7 +218,7 @@ export function createAnalytics(config, { fetch = globalThis.fetch, timeZone = '
     tracker: {
       src: `${u.url}/${u.scriptName}`,
       websiteId: u.websiteId,
-      domains: config.baseUrl ? new URL(config.baseUrl).hostname : null,
+      domains: config.baseUrl ? siteHosts(new URL(config.baseUrl).hostname) : null,
     },
     report,
   };
