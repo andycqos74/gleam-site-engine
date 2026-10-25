@@ -45,7 +45,15 @@ ${body}
   <div class="footer-right">
     <a href="mailto:${email}">${k.text('contact.email')}</a> · <a href="tel:${phone.replace(/\s/g, '')}">${k.text('contact.phone')}</a><br>${k.text('contact.address')}
   </div>
-</footer>`;
+</footer>
+<div class="powered-by">
+  <div class="powered-inner">
+    <span class="pb-text">Powered by</span>
+    <a href="https://solwai.co.uk/gleam" aria-label="Gleam"><img class="gl-mark" src="/img/gleam-mark-on-navy.svg" alt="" width="23" height="16"><span class="gl-name">GLEAM</span></a>
+    <span class="pb-text">from</span>
+    <a href="https://solwai.co.uk"><img class="sw-mark" src="/img/solwai-mark-on-navy.svg" alt="" width="23" height="16"><span class="sw-name">SOLW<span class="ai">AI</span></span></a>
+  </div>
+</div>`;
 }
 
 export function notFound() {
