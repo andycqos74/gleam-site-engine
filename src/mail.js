@@ -19,5 +19,26 @@ export function createMailer(config) {
         text: `Name: ${msg.name}\nEmail: ${msg.email}\nTopic: ${msg.topic || '-'}\n\n${msg.message}\n`,
       });
     },
+    // A message taken by the AI voice agent. There's no email address to reply to, so the phone number leads.
+    async sendPhone(msg, siteName = 'Website') {
+      const flags = [msg.urgency === 'urgent' && 'URGENT', msg.needsReview && 'please check'].filter(Boolean);
+      await transport.sendMail({
+        from: config.mailFrom,
+        to: config.contactTo,
+        subject: `${flags.length ? `[${flags.join(', ')}] ` : ''}${siteName} phone message: ${msg.topic || 'General'} from ${msg.name}`,
+        text: [
+          `Name: ${msg.name}`,
+          `Phone: ${msg.phone || 'withheld'}`,
+          `Topic: ${msg.topic || '-'}`,
+          `Urgency: ${msg.urgency}`,
+          msg.preferredTime && `Preferred time: ${msg.preferredTime}`,
+          msg.needsReview && 'The assistant was unsure about some details: please check the transcript.',
+          '',
+          msg.message,
+          '',
+          msg.transcriptUrl && `Transcript: ${msg.transcriptUrl}`,
+        ].filter((l) => l !== false && l != null).join('\n'),
+      });
+    },
   };
 }

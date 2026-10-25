@@ -68,7 +68,7 @@ export function dashboard(ctx, { unread }) {
   </div>
   <div class="admin-card">
     <h2>Messages</h2>
-    <p>${unread ? `${unread} contact form message${unread === 1 ? '' : 's'} not yet marked as dealt with.` : 'No new contact form messages.'}</p>
+    <p>${unread ? `${unread} message${unread === 1 ? '' : 's'} not yet marked as dealt with.` : 'No new messages.'}</p>
     <a class="btn btn-outline" href="/admin/messages">View messages</a>
   </div>
   <div class="admin-card">
@@ -80,23 +80,34 @@ export function dashboard(ctx, { unread }) {
   });
 }
 
-export function messagesPage(ctx, { messages }) {
+export function messagesPage(ctx, { messages, show = '' }) {
+  const tabs = [['', 'All'], ['form', 'Website'], ['phone', 'Phone']];
+  const keep = show ? html`<input type="hidden" name="show" value="${show}">` : '';
   return adminLayout(ctx, {
     title: 'Messages',
-    body: html`<h1 class="admin-h1">Contact form messages</h1>
+    body: html`<h1 class="admin-h1">Messages</h1>
+<nav class="message-tabs" aria-label="Which messages">
+${tabs.map(([key, label]) => html`<a href="/admin/messages${key ? `?show=${key}` : ''}"${attrs({ 'aria-current': key === show ? 'page' : null })}>${label}</a>`)}
+</nav>
 ${messages.length ? '' : html`<p>No messages yet.</p>`}
 <div class="message-list">
 ${messages.map((m) => html`<article class="admin-card message${m.handled ? ' is-handled' : ''}">
-  <header><strong>${m.name}</strong> · <a href="mailto:${m.email}?subject=${encodeURIComponent(`Re: your message to QoS Community Trust`)}">${m.email}</a> · <span class="tag tag-sky">${m.topic || 'General'}</span> <span class="muted">${when(m.at)}</span></header>
+  ${m.source === 'phone' ? phoneHeader(m) : html`<header><strong>${m.name}</strong> · <a href="mailto:${m.email}?subject=${encodeURIComponent(`Re: your message to ${ctx.siteName}`)}">${m.email}</a> · <span class="tag tag-sky">${m.topic || 'General'}</span> <span class="muted">${when(m.at)}</span></header>`}
   <div class="message-text">${paragraphs(m.message)}</div>
+  ${m.source === 'phone' && (m.preferred_time || m.transcript_url) ? html`<p class="message-extra">${m.preferred_time ? html`<span><strong>Preferred time:</strong> ${m.preferred_time}</span>` : ''}${m.transcript_url ? html`<a href="${m.transcript_url}" target="_blank" rel="noopener noreferrer">Read the transcript</a>` : ''}</p>` : ''}
   <footer>
-    <form method="post" action="/admin/messages/${m.id}">${csrfInput(ctx)}<input type="hidden" name="handled" value="${m.handled ? '0' : '1'}"><button class="btn btn-outline btn-xs">${m.handled ? 'Mark as not dealt with' : 'Mark as dealt with'}</button></form>
-    <form method="post" action="/admin/messages/${m.id}/delete" data-confirm="Delete this message permanently?">${csrfInput(ctx)}<button class="link-btn danger">Delete</button></form>
+    <form method="post" action="/admin/messages/${m.id}">${csrfInput(ctx)}${keep}<input type="hidden" name="handled" value="${m.handled ? '0' : '1'}"><button class="btn btn-outline btn-xs">${m.handled ? 'Mark as not dealt with' : 'Mark as dealt with'}</button></form>
+    <form method="post" action="/admin/messages/${m.id}/delete" data-confirm="Delete this message permanently?">${csrfInput(ctx)}${keep}<button class="link-btn danger">Delete</button></form>
   </footer>
 </article>`)}
 </div>
 <script src="/_engine/admin.js?v=${ctx.version}" defer></script>`,
   });
+}
+
+// A message taken by the AI voice agent: a number to ring back instead of an email address.
+function phoneHeader(m) {
+  return html`<header><span class="tag tag-phone">☎ Phone</span> <strong>${m.name}</strong> · ${m.phone ? html`<a href="tel:${m.phone.replace(/[^\d+]/g, '')}">${m.phone}</a>` : html`<span class="muted">Number withheld</span>`} · <span class="tag tag-sky">${m.topic || 'General'}</span>${m.urgency === 'urgent' ? html` <span class="tag tag-urgent">Urgent</span>` : ''}${m.needs_review ? html` <span class="tag tag-check">Please check</span>` : ''} <span class="muted">${when(m.at)}</span></header>`;
 }
 
 function describe(theme, r) {

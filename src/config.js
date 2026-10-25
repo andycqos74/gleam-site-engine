@@ -22,5 +22,7 @@ export function loadConfig(env = process.env) {
     smtpPort: Number(env.SMTP_PORT || 587),
     smtpUser: env.SMTP_USER || '',
     smtpPassword: env.SMTP_PASSWORD || '',
+    // Shared secret the AI voice agent sends to deliver phone messages into Admin > Messages. Blank = off.
+    voiceApiToken: (env.VOICE_API_TOKEN || '').trim(),
   };
 }

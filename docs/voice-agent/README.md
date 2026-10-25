@@ -373,40 +373,24 @@ through `src/mail.js`. Phone messages go into the same place, so staff have one 
 Each site has its own container and database, so the voice system can't write into them directly. Instead each
 site gets a small authenticated endpoint, and the voice system's review job calls it.
 
-**Changes to this engine** (small, done as a separate piece of work):
+**Built in this engine** (see "Phone messages from the AI voice agent" in the [main README](../../README.md)):
 
-1. **Config:** a new `VOICE_API_TOKEN` environment variable. The endpoint is off when it's blank.
-2. **Database:** add nullable columns to `messages` (as an additive migration on start-up): `source` (`form` or
-   `phone`, default `form`), `phone`, `urgency`, `preferred_time`, `call_ref` (the voice system's call ID,
-   unique, so a retried delivery doesn't create a duplicate), `transcript_url`, `needs_review`. `email` becomes
-   optional for phone messages; store `''` to keep the current `NOT NULL` column as it is.
-3. **Endpoint:** `POST /api/inbound/voice-message` with `Authorization: Bearer <VOICE_API_TOKEN>`, JSON body:
-
-   ```json
-   {
-     "call_ref": "call_01J...",
-     "at": "2026-11-03T14:12:00Z",
-     "name": "Mrs X",
-     "phone": "+447700900432",
-     "topic": "Price request",
-     "message": "Wants a price for a boiler service, 3-bed semi.\n\n\"...could you give me a rough price for a service?\"",
-     "urgency": "normal",
-     "preferred_time": "Thursday afternoon",
-     "needs_review": false,
-     "transcript_url": "https://voice.example.com/calls/call_01J..."
-   }
-   ```
-
-   It returns `201` with the message ID, or `200` if `call_ref` was already stored. It runs the same email step as
-   the contact form, with "Phone message" in the subject. It's rate-limited and constant-time compares the token.
-4. **Admin screen:** retitle "Contact form messages" to "Messages". For phone messages, show a phone icon, a `tel:`
-   link instead of the `mailto:` link, the urgency tag, the preferred time, a "please check" badge when
-   `needs_review` is set, and a "Read the transcript" link. Filter tabs for All / Website / Phone. Also make the
-   `mailto:` subject use the site's name instead of the hard-coded "QoS Community Trust".
-5. **Tests:** token required, duplicate `call_ref` ignored, phone message listed and markable as dealt with.
+- `VOICE_API_TOKEN` setting. While it's blank the endpoint doesn't exist (`404`).
+- `POST /api/inbound/voice-message` with `Authorization: Bearer <token>`. JSON fields: `ref` (required, unique per
+  message: the call ID plus the task number), `message` (required), `name`, `phone`, `topic`, `urgency`
+  (`low` / `normal` / `urgent`), `preferred_time`, `needs_review`, `transcript_url`, `at`. Returns `201` when
+  stored, or `200` with `duplicate: true` if that `ref` is already stored, so retries are safe. Repeated bad tokens
+  from one address are slowed down (`429`).
+- New columns on `messages`, added automatically to existing databases: `source` (`form` / `phone`), `phone`,
+  `urgency`, `preferred_time`, `ref` (unique), `transcript_url`, `needs_review`.
+- Admin → Messages is retitled "Messages" and has All / Website / Phone filter buttons. Phone messages show a tap-to-call
+  link (or "Number withheld"), Urgent and "Please check" badges, the preferred time and a "Read the transcript"
+  link. The reply-by-email subject for website messages now uses the site's name instead of a hard-coded one.
+- Phone messages are emailed to `CONTACT_TO` with the site's existing SMTP settings. Urgent and uncertain messages
+  are flagged in the subject.
 
 **On the voice side:** `tenant_config` gets `site_url` and `site_token` (stored encrypted) for each business. The
-review job sends one request per task and retries with back-off until the site accepts it. The transcript link
+review job sends one request per task (`ref` = call ID + task number) and retries with back-off until the site accepts it. The transcript link
 points to the voice system's transcript page. Until the voice portal has sign-in for business staff, that page uses
 a long, unguessable, expiring link.
 
@@ -456,7 +440,7 @@ position, not legal advice.
 **Phase 1: message-taker for tenant #1, SolwAI (about 2-3 weeks)**
 - Tenant lookup by dialled number, `tenant_config`-driven prompt template, `capture_request` tool with read-back
 - Transcript storage (recording off by default), review job with structured output
-- Inbound voice-message endpoint and phone messages in Admin → Messages in this engine; SolwAI site receives and emails them
+- ~~Inbound voice-message endpoint and phone messages in Admin → Messages in this engine~~ (done); set `VOICE_API_TOKEN` on the SolwAI site
 - Internal voice admin screens: businesses, numbers, profile editor, call list with transcript
 - Guardrails: maximum call length, silence timeout, monthly minute cap, provider spend limits
 
