@@ -12,7 +12,7 @@
 
 services:
   web:
-    image: ghcr.io/andycqos74/gleam-site-engine:${APP_TAG}
+    image: ghcr.io/andycqos74/gleam-site-engine:${APP_TAG:-latest}
     restart: unless-stopped
     environment:
       THEME: ${THEME:-qos}
