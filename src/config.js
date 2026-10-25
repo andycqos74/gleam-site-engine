@@ -22,5 +22,13 @@ export function loadConfig(env = process.env) {
     smtpPort: Number(env.SMTP_PORT || 587),
     smtpUser: env.SMTP_USER || '',
     smtpPassword: env.SMTP_PASSWORD || '',
+    // Visitor chat assistant (Claude). Off for every site until an API key is set here AND an administrator turns
+    // it on under Admin > Chat assistant, where each site keeps its own name, greeting and instructions.
+    assistantApiKey: (env.ASSISTANT_API_KEY || env.ANTHROPIC_API_KEY || '').trim(),
+    assistantModel: env.ASSISTANT_MODEL || 'claude-opus-5-5',
+    // low, medium, high, xhigh or max: how hard the model thinks per answer.
+    assistantEffort: ['low', 'medium', 'high', 'xhigh', 'max'].includes(env.ASSISTANT_EFFORT) ? env.ASSISTANT_EFFORT : 'medium',
+    // Visitor messages per conversation before they're asked to start a new one.
+    assistantMaxMessages: Number(env.ASSISTANT_MAX_MESSAGES || 30),
   };
 }

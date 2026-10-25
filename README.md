@@ -33,7 +33,8 @@ src/                     The engine
   content/store.js       Reading/saving content, validation, change history, content updates
   content/types.js       Field types and date helpers
   theme-api.js           What themes import from the engine
-public/                  Engine assets, served at /_engine/ (editor.js, editor.css, admin.js)
+  assistant.js           The visitor chat assistant (Claude): settings, site knowledge, conversations
+public/                  Engine assets, served at /_engine/ (editor.js, editor.css, admin.js, chat.js, chat.css)
 themes/<name>/           One folder per theme
   theme.js               The manifest: content model, pages, layout, assets
   public/                The theme's CSS, JS, fonts and images, served at the site root
@@ -66,6 +67,26 @@ Contact form messages appear under **Admin → Messages** (and are emailed too i
 
 Administrators add and remove editors under **Admin → People**. New people get a one-time password that they must
 change at first sign-in.
+
+## Chat assistant
+
+An optional AI chat popup (bottom right of every page) where visitors ask about the site, e.g. *"When is the
+Saturday club?"* or *"How do I book?"*, and Claude answers from the site's own words. It works with every theme and
+needs no theme changes.
+
+1. Whoever runs the server adds `ANTHROPIC_API_KEY` to the site's stack (one key can serve every site; model and
+   effort are `ASSISTANT_MODEL` / `ASSISTANT_EFFORT`) and redeploys.
+2. An administrator opens **Admin → Chat assistant**, ticks *Show the chat assistant to visitors*, and sets what
+   makes it this site's own: its name, the line under the name, greeting, pop-up teaser, up to four suggested
+   questions, button colour, **extra information** (facts not on the site: opening hours, parking, FAQs) and the
+   **instructions** (who it is, what it should and shouldn't do, tone). Standard instructions are filled in to start.
+3. *Use the words on this website* gives it every visible page, list and item page as its knowledge, refreshed as soon
+   as anything is edited. Hidden and scheduled items are left out.
+
+The same page lists the latest questions visitors asked and the answers they got (kept for 90 days), to help improve
+the instructions. The popup is hidden while editing. Answers come from the `/_chat` endpoint (same site only, 30
+questions an hour per visitor); conversations are kept in memory for an hour. A theme can open the chat from its
+own button with `data-gchat-open`.
 
 ## Before go-live (QoS theme)
 
@@ -184,6 +205,9 @@ docker run --rm -v <stack>_site-data:/data -v /backups:/backups alpine \
 | `DATA_DIR` | Where the database and photos are kept (`/data` in the image) |
 | `PORT` | Listening port (8080) |
 | `TRUST_PROXY` | Express `trust proxy` setting; defaults to private networks (tunnel/proxy containers) |
+| `ANTHROPIC_API_KEY` (or `ASSISTANT_API_KEY`) | Visitor chat assistant (Claude). Off unless set; each site then turns it on under **Admin → Chat assistant** |
+| `ASSISTANT_MODEL`, `ASSISTANT_EFFORT` | The assistant's model (default `claude-opus-5-5`) and effort: `low`, `medium` (default), `high`, `xhigh` or `max` |
+| `ASSISTANT_MAX_MESSAGES` | Questions per conversation before the visitor is asked to start a new one (default 30) |
 
 ## Running more than one site
 

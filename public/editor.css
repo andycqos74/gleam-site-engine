@@ -138,6 +138,12 @@ body:has(.ed-drawer) .admin-bar { display: none; }
 .admin-nav form { display: contents; }
 .admin-main { max-width: 1100px; margin: 0 auto; padding: 12px 24px 80px; display: flex; flex-direction: column; gap: 22px; }
 .admin-h1 { font-family: var(--ed-font-heading); font-size: 40px; color: var(--ed-ink); line-height: 1.1; }
+.admin-h2 { font-family: var(--ed-font-heading); font-size: 28px; color: var(--ed-ink); line-height: 1.15; }
+.admin-page .admin-form textarea { font: inherit; font-weight: 400; font-size: 15px; line-height: 1.5; padding: 12px 14px; border: 2px solid var(--ed-ink); border-radius: 12px; background: #fff; color: var(--ed-text); resize: vertical; width: 100%; }
+.admin-card.wide { align-items: stretch; }
+.admin-card.wide h2 { margin-top: 8px; }
+.admin-page .admin-form .admin-check { flex-direction: row; align-items: center; gap: 10px; }
+.admin-page .admin-form .admin-check input { width: 20px; height: 20px; padding: 0; flex: none; }
 .admin-card { background: #fff; border: 2px solid var(--ed-ink); border-radius: 22px; padding: 24px; box-shadow: var(--ed-shadow); display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
 .admin-card h2 { font-family: var(--ed-font-heading); font-size: 24px; color: var(--ed-ink); }
 .admin-card.narrow { max-width: 520px; align-items: stretch; }
