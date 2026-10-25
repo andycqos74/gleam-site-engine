@@ -40,8 +40,9 @@ the first version, and sketched the multi-tenant design. Those decisions are sum
    urgency) and read it back to the caller to confirm.
 4. **Transcription:** store a full transcript (and, if the business opts in, the recording) for every call.
 5. **Review into follow-up tasks:** after the call, an LLM reviews the transcript and creates follow-up tasks (for
-   example "Mrs X wants a price for a boiler service" or "Mr Z wants an appointment Thursday afternoon"). These are
-   sent straight to the business and appear in an inbox where they can be marked done.
+   example "Mrs X wants a price for a boiler service" or "Mr Z wants an appointment Thursday afternoon"). They're
+   delivered to the business's website **Admin → Messages** screen alongside contact form messages, and emailed. There
+   they can be marked as dealt with (see [Delivery into Admin → Messages](#delivery-into-admin--messages)).
 
 **Out of scope for now**
 
@@ -65,6 +66,17 @@ From the earlier chat:
 | First tenants | SolwAI itself and the club (QoS Community Trust). They're different enough to show up anything hard-coded. |
 | Failover | Per-number failover on the trunk (to the business's mobile or voicemail) when our server is down. |
 | Data protection | We're the data processor for each business; they sign terms and a data processing agreement listing our sub-processors. |
+
+Decided in this round, for the test phase:
+
+| Question | Decision |
+| --- | --- |
+| Numbers | **Forward existing lines.** Each business keeps its number and forwards it to its own Telnyx number, so the dialled number still identifies the business. |
+| Recordings | **Transcripts only by default.** Recording is a per-business opt-in (`recording_enabled`, off by default). |
+| Delivery of tasks | **Email to start, plus the existing Admin → Messages screen** in each business's Gleam site. No SMS yet, and no separate task inbox in a voice portal for now. |
+| When the agent answers | **Every call, 24/7** while testing (unconditional forwarding). Answering only on no-answer or out of hours is a per-business setting for later. |
+| Voice | **One default British voice for everyone** (Cartesia's default British voice). Per-business voices later. |
+| Budget | Doesn't change the build. Covered by spending guardrails instead (see [Costs](#costs)). |
 
 ## How a call works
 
@@ -152,7 +164,7 @@ Component choices within option C:
 | Text-to-speech | Cartesia Sonic 3, ElevenLabs Flash, Deepgram Aura, OpenAI TTS | **Cartesia Sonic 3** | Low first-audio latency, about $35 per million characters, natural British voices. ElevenLabs Flash ($0.05 per 1,000 characters) if a tenant wants a particular voice. |
 | Recording + transcript storage | MinIO/local disk on VPS, S3-compatible (Backblaze, Cloudflare R2) | **S3-compatible bucket in the UK/EU** | Keeps bulky audio off the VPS disk. |
 | Database | MySQL, Postgres, SQLite | **MySQL** (as in the earlier chat) | Already run in containers on the existing stack. Shared by the agent, review job and portal. |
-| Notifications | Telnyx SMS, email via SMTP/Postmark | **Email first, SMS via Telnyx** | Email is near free; SMS for urgent tasks and caller confirmations. |
+| Notifications | Telnyx SMS, email via SMTP/Postmark | **Email through each business's Gleam site (Admin → Messages); SMS later** | Uses the email set-up the sites already have; SMS for urgent tasks and caller confirmations once needed. |
 | Background jobs | Simple DB-backed queue, Redis queue | **DB-backed queue** | The review job runs once per call; volume is tiny. LiveKit already needs Redis if we want it later. |
 
 ### Not chosen: speech-to-speech models
@@ -207,7 +219,7 @@ UDP and need a public IP with ports open. That decides most of the rest:
 | LiveKit (open source) | Media server, SIP bridge, agent framework | None (self-hosted) | No | Our own server, so failover on the trunk applies |
 | VPS provider | Hosting | Everything at rest | Yes | Trunk failover; restore from backup |
 | Object storage (S3-compatible) | Recordings, transcripts | Recordings | Yes | Writes queue on local disk |
-| Email (SMTP/Postmark) | Task notifications | Task summaries | Yes | Tasks are still in the portal inbox |
+| Email (each site's existing SMTP) | Task notifications | Task summaries | Yes | Tasks are still in Admin → Messages |
 | Stripe (later) | Billing | Business billing details only | Yes | Not on the call path |
 
 Every supplier that touches call data goes in the sub-processor list in the data processing agreement, along with
@@ -238,6 +250,18 @@ figures are US list rates.
 $3-5 in reviews. On a hosted platform the same calls would cost about $21-90. UK competitors charge about £69-299 a
 month.
 
+**Budget doesn't change the architecture.** The same stack costs the same per minute at 10 calls or 10,000; only the
+server size grows. The budget only shapes guardrails, which matter more with 24/7 answering (spam and robocalls
+cost minutes too):
+
+- A maximum call length (for example 10 minutes) and a silence timeout in the agent
+- A per-business monthly minute cap, after which calls go to the failover number
+- Prepaid balances or hard spend limits and low-balance alerts in the Telnyx, Deepgram, Anthropic and Cartesia
+  accounts
+- A daily cost summary per business from the `cost_breakdown` logged on each call
+
+Pricing for customers can wait until the pilot shows real call volumes.
+
 ## Recommendation
 
 **Build option C as agreed in the earlier chat, scoped to the message-taker:**
@@ -252,8 +276,9 @@ month.
 - **Cartesia Sonic 3** for the voice
 - **Claude Opus 5.5 with structured outputs** for the post-call review that turns transcripts into tasks
 - **MySQL** for tenants, calls, transcripts and tasks; **S3-compatible UK/EU bucket** for recordings
-- **Email plus Telnyx SMS** for task notifications; a **small portal** with an inbox of tasks, call list, transcript
-  view and the tenant profile editor
+- **Tasks delivered into each business's Gleam site (Admin → Messages) and by email**, using the site's existing
+  mail set-up. SMS via Telnyx comes later. The **voice portal** starts as an internal admin screen for us (businesses,
+  numbers, profiles, call list, transcripts) rather than something customers sign in to.
 
 Why this over a hosted platform: the multi-tenant data, portal and task handling have to be built either way. The
 self-built pipeline costs roughly a third as much per minute, keeps call data on our own server with fewer
@@ -281,7 +306,7 @@ from the signed-in user, never from the browser.
 | `calls` | id, tenant_id, caller_number, dialled_number, started_at, ended_at, duration_s, end_reason, recording_key, cost_breakdown (JSON) |
 | `transcript_turns` | call_id, tenant_id, seq, speaker (caller/agent), text, start_ms, end_ms, stt_confidence |
 | `captures` | call_id, tenant_id, payload (JSON from the in-call `capture_request` tool), confirmed_by_caller |
-| `tasks` | id, tenant_id, call_id, type, title, details, caller_name, callback_number, preferred_time, urgency, confidence, needs_review, status (new / in progress / done / dismissed), assigned_to, created_at, done_at |
+| `tasks` | id, tenant_id, call_id, type, title, details, caller_name, callback_number, preferred_time, urgency, confidence, needs_review, status (new / in progress / done / dismissed), assigned_to, created_at, done_at, delivered_at (to the site's Admin → Messages), delivery_attempts |
 | `jobs` | id, tenant_id, kind (review / notify), call_id, status, attempts, last_error |
 
 ## Transcription and review pipeline
@@ -327,17 +352,66 @@ from the signed-in user, never from the browser.
 
 4. Save the tasks. Set `needs_review` when confidence is low, the review disagrees with the in-call capture (for
    example a different callback number), or the call was cut off before read-back.
-5. Notify the business's contacts by email at once (and by SMS for urgent tasks), with a link to the task in the
-   portal.
+5. Deliver each task to the business's Gleam site (Admin → Messages), which stores it and emails it with the site's
+   existing mail set-up. See the next section. SMS for urgent tasks comes later.
 6. **Quality loop:** `unanswered_questions` and `agent_issues` go to a per-tenant "improve your answers" list in the
    portal. Each gap the owner fills in becomes new knowledge for the agent. This is how the agent gets better, and it
    shows what callers actually ask for before booking is built.
 
 **Review by the business**
 
-The portal inbox lists tasks newest first, flagged ones on top. Each task links to the call's transcript (with the
-supporting quote highlighted) and the recording. The owner marks it in progress, done or dismissed. A dismissed task
-can be tagged "wrong", which feeds an accuracy figure per tenant that we watch.
+Staff see phone messages in Admin → Messages next to contact form messages and mark them as dealt with in the same
+way. Each phone message shows the caller's number, the urgency, any preferred time, the summary, the supporting
+quote, and a link to the full transcript. Flagged ("please check") messages stand out.
+
+### Delivery into Admin → Messages
+
+The first two businesses (SolwAI and the club) both run on this site engine, and each site already keeps contact
+form messages under **Admin → Messages** (the `messages` table in each site's SQLite database) and emails them
+through `src/mail.js`. Phone messages go into the same place, so staff have one list to work through.
+
+Each site has its own container and database, so the voice system can't write into them directly. Instead each
+site gets a small authenticated endpoint, and the voice system's review job calls it.
+
+**Changes to this engine** (small, done as a separate piece of work):
+
+1. **Config:** a new `VOICE_API_TOKEN` environment variable. The endpoint is off when it's blank.
+2. **Database:** add nullable columns to `messages` (as an additive migration on start-up): `source` (`form` or
+   `phone`, default `form`), `phone`, `urgency`, `preferred_time`, `call_ref` (the voice system's call ID,
+   unique, so a retried delivery doesn't create a duplicate), `transcript_url`, `needs_review`. `email` becomes
+   optional for phone messages; store `''` to keep the current `NOT NULL` column as it is.
+3. **Endpoint:** `POST /api/inbound/voice-message` with `Authorization: Bearer <VOICE_API_TOKEN>`, JSON body:
+
+   ```json
+   {
+     "call_ref": "call_01J...",
+     "at": "2026-11-03T14:12:00Z",
+     "name": "Mrs X",
+     "phone": "+447700900432",
+     "topic": "Price request",
+     "message": "Wants a price for a boiler service, 3-bed semi.\n\n\"...could you give me a rough price for a service?\"",
+     "urgency": "normal",
+     "preferred_time": "Thursday afternoon",
+     "needs_review": false,
+     "transcript_url": "https://voice.example.com/calls/call_01J..."
+   }
+   ```
+
+   It returns `201` with the message ID, or `200` if `call_ref` was already stored. It runs the same email step as
+   the contact form, with "Phone message" in the subject. It's rate-limited and constant-time compares the token.
+4. **Admin screen:** retitle "Contact form messages" to "Messages". For phone messages, show a phone icon, a `tel:`
+   link instead of the `mailto:` link, the urgency tag, the preferred time, a "please check" badge when
+   `needs_review` is set, and a "Read the transcript" link. Filter tabs for All / Website / Phone. Also make the
+   `mailto:` subject use the site's name instead of the hard-coded "QoS Community Trust".
+5. **Tests:** token required, duplicate `call_ref` ignored, phone message listed and markable as dealt with.
+
+**On the voice side:** `tenant_config` gets `site_url` and `site_token` (stored encrypted) for each business. The
+review job sends one request per task and retries with back-off until the site accepts it. The transcript link
+points to the voice system's transcript page. Until the voice portal has sign-in for business staff, that page uses
+a long, unguessable, expiring link.
+
+A business that doesn't run on this engine gets the same tasks by email only. A customer-facing task inbox in the
+voice portal can come later if that becomes common.
 
 ## Compliance (UK)
 
@@ -381,28 +455,30 @@ position, not legal advice.
 
 **Phase 1: message-taker for tenant #1, SolwAI (about 2-3 weeks)**
 - Tenant lookup by dialled number, `tenant_config`-driven prompt template, `capture_request` tool with read-back
-- Transcript and recording storage, review job with structured output, email notifications
-- Minimal portal: sign in, task inbox, call list with transcript, tenant profile editor
+- Transcript storage (recording off by default), review job with structured output
+- Inbound voice-message endpoint and phone messages in Admin → Messages in this engine; SolwAI site receives and emails them
+- Internal voice admin screens: businesses, numbers, profile editor, call list with transcript
+- Guardrails: maximum call length, silence timeout, monthly minute cap, provider spend limits
 
 **Phase 2: second tenant, the club (about 1-2 weeks)**
-- Onboard QoS Community Trust from config only (anything that needs a code change is a bug to fix)
-- SMS notifications, needs-review flags, "improve your answers" list, retention job, isolation test
+- Onboard QoS Community Trust from config only (anything that needs a code change is a bug to fix); forward the club's existing line
+- Needs-review flags, "improve your answers" list, retention job, isolation test
 - Failover tested by stopping the server mid-day
 
 **Phase 3: pilot with 2-3 local businesses**
 - Data processing agreement and sub-processor list, usage metering per tenant, admin view across tenants
-- Decide the next feature from real calls: warm transfer, booking with a human in the loop, or both
+- Decide the next feature from real calls: warm transfer, booking with a human in the loop, SMS notifications, or answering only on no-answer/out of hours
+- Set customer pricing from real call volumes
 
 ## Open questions
 
-1. Which number for the first tenants: new local Dumfries numbers (01387), or forward existing lines?
-2. Should recordings be on by default, or transcripts only (less sensitive, cheaper to store)?
-3. Who receives tasks for the club, and is email enough or is SMS needed from day one?
-4. Opening hours behaviour: should the agent answer 24/7, or only out of hours and when staff don't pick up (the
-   business's phone system forwards on no-answer)?
-5. Voice: one standard British voice for all tenants at first, or a choice per tenant?
-6. Budget ceiling for the pilot, and the price point (the £69-299/month competitor range) to test with the pilot
-   businesses.
+The first round is answered; see the decisions table under [Decisions carried over](#decisions-carried-over). Still
+to settle:
+
+1. Which number does the club forward, and is that line on a phone system that can forward unconditionally (most
+   BT lines and VoIP systems can)?
+2. Who receives the club's phone messages by email: the site's existing `CONTACT_TO` address, or someone else?
+3. Wording of the greeting and AI disclosure for each business.
 
 ## Sources
 
