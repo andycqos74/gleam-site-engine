@@ -63,7 +63,9 @@ deploy/portainer         Portainer stack and its variables
    *Book Now* address, Facebook/Instagram addresses and the map position.
 
 Made a mistake? **Admin → Change history** lists every change with a *Put back* button.
-Contact form messages appear under **Admin → Messages** (and are emailed too if SMTP is set up).
+Contact form messages appear under **Admin → Messages** (and are emailed too if SMTP is set up). So do phone messages
+taken by the AI voice agent, if it's switched on (see [Phone messages](#phone-messages-from-the-ai-voice-agent)); the
+*All / Website / Phone* buttons filter the list.
 
 Administrators add and remove editors under **Admin → People**. New people get a one-time password that they must
 change at first sign-in.
@@ -201,6 +203,7 @@ docker run --rm -v <stack>_site-data:/data -v /backups:/backups alpine \
 | `ADMIN_RESET` | `true` = on start, set the `ADMIN_EMAIL` account's password back to `ADMIN_PASSWORD` |
 | `BASE_URL` | Public address, for canonical links, sitemap and social previews |
 | `CONTACT_TO`, `MAIL_FROM`, `SMTP_*` | Email contact-form messages (they are always stored in Admin → Messages) |
+| `VOICE_API_TOKEN` | Shared secret for phone messages from the AI voice agent; blank = off (see below) |
 | `COOKIE_SECURE` | `true` in production (HTTPS only sign-in cookie); blank = automatic |
 | `DATA_DIR` | Where the database and photos are kept (`/data` in the image) |
 | `PORT` | Listening port (8080) |
@@ -208,6 +211,38 @@ docker run --rm -v <stack>_site-data:/data -v /backups:/backups alpine \
 | `ANTHROPIC_API_KEY` (or `ASSISTANT_API_KEY`) | Visitor chat assistant (Claude). Off unless set; each site then turns it on under **Admin → Chat assistant** |
 | `ASSISTANT_MODEL`, `ASSISTANT_EFFORT` | The assistant's model (default `claude-opus-5-5`) and effort: `low`, `medium` (default), `high`, `xhigh` or `max` |
 | `ASSISTANT_MAX_MESSAGES` | Questions per conversation before the visitor is asked to start a new one (default 30) |
+
+## Phone messages from the AI voice agent
+
+The AI voice agent (planned in [docs/voice-agent](docs/voice-agent/README.md)) answers a business's phone and turns
+each call into one or more follow-up messages. It delivers them to the business's site, where they're listed under
+**Admin → Messages** with the contact form messages and emailed in the same way.
+
+Set `VOICE_API_TOKEN` to a long random value (`openssl rand -hex 32`) and give the voice agent the same value. While
+it's blank the endpoint doesn't exist. The agent sends:
+
+```
+POST /api/inbound/voice-message
+Authorization: Bearer <VOICE_API_TOKEN>
+Content-Type: application/json
+
+{
+  "ref": "call_01J9#1",                 required; unique per message (call ID plus task number)
+  "message": "Wants a price for ...",    required, up to 5,000 characters
+  "name": "Mrs X",                       optional; "Unknown caller" if missing
+  "phone": "+44 7700 900432",            optional; "Number withheld" if missing
+  "topic": "Price request",              optional
+  "urgency": "normal",                   low | normal | urgent (default normal)
+  "preferred_time": "Thursday afternoon",
+  "needs_review": false,                 true shows a "Please check" badge
+  "transcript_url": "https://...",       must start with http(s)://
+  "at": "2026-11-03T14:12:00Z"           when the call was taken (default: now)
+}
+```
+
+Replies: `201 {"ok": true, "id": 12}` when stored; `200 {..., "duplicate": true}` if that `ref` was already stored
+(so the agent can safely retry); `401` for a wrong or missing token (20 failures in 15 minutes from one address get
+`429`); `422 {"errors": {...}}` for invalid fields; `404` when `VOICE_API_TOKEN` isn't set.
 
 ## Running more than one site
 

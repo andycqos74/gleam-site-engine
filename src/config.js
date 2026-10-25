@@ -30,5 +30,7 @@ export function loadConfig(env = process.env) {
     assistantEffort: ['low', 'medium', 'high', 'xhigh', 'max'].includes(env.ASSISTANT_EFFORT) ? env.ASSISTANT_EFFORT : 'medium',
     // Visitor messages per conversation before they're asked to start a new one.
     assistantMaxMessages: Number(env.ASSISTANT_MAX_MESSAGES || 30),
+    // Shared secret the AI voice agent sends to deliver phone messages into Admin > Messages. Blank = off.
+    voiceApiToken: (env.VOICE_API_TOKEN || '').trim(),
   };
 }

@@ -167,6 +167,14 @@ body:has(.ed-drawer) .admin-bar { display: none; }
 .message.is-handled { opacity: .65; box-shadow: none; }
 .message-text { display: flex; flex-direction: column; gap: 8px; }
 .message footer { display: flex; gap: 14px; align-items: center; }
+.message-extra { display: flex; gap: 16px; flex-wrap: wrap; font-size: 15px; }
+.message-tabs { display: flex; gap: 4px; align-self: flex-start; background: #fff; border: 2px solid var(--ed-ink); border-radius: 999px; padding: 5px; font-weight: 700; font-size: 15px; }
+.message-tabs a { padding: 7px 14px; border-radius: 999px; text-decoration: none; color: var(--ed-ink); }
+.message-tabs a:hover { background: var(--ed-soft); }
+.message-tabs a[aria-current="page"] { background: var(--ed-ink); color: #fff; }
+.admin-page .tag-phone { background: var(--ed-ink); color: #fff; }
+.admin-page .tag-urgent { background: #b3401a; color: #fff; }
+.admin-page .tag-check { background: var(--ed-highlight); color: var(--ed-ink); }
 @media (max-width: 700px) {
   .admin-table thead { display: none; }
   .admin-table tr { display: block; border-bottom: 2px solid var(--ed-soft-2); }
