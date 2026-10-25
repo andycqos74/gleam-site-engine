@@ -1,0 +1,65 @@
+# Portainer stack for an Umami statistics server (https://umami.is): privacy-friendly visitor counting for any number
+# of websites, Gleam sites or not. Deploy it once, next to (not inside) the website stacks.
+# Umami counts without cookies and doesn't store IP addresses; everything it records stays in the umami-db volume.
+# Public access is through a Cloudflare Tunnel (cloudflared): no ports are published on the host.
+# In the Cloudflare dashboard, point the tunnel's public hostname (e.g. stats.example.org) at http://umami:3000.
+# Paste into Portainer > Stacks > Add stack > Web editor (stack name e.g. "umami"), then add the variables from
+# stack.env (Environment variables > Advanced mode, or "Load variables from .env file").
+#
+# First sign-in: <your stats address>, username admin, password umami. Change that password straight away.
+# Back up the umami-db volume (see README.md in this folder).
+
+services:
+  umami:
+    image: ghcr.io/umami-software/umami:${UMAMI_TAG:-3}
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_URL: postgresql://umami:${POSTGRES_PASSWORD}@db:5432/umami
+      APP_SECRET: ${APP_SECRET}
+      # Only needed if anyone turns on two-factor sign-in for their Umami account.
+      TWO_FACTOR_ENCRYPTION_KEY: ${TWO_FACTOR_ENCRYPTION_KEY:-}
+      DISABLE_TELEMETRY: 1
+      # Optional: serve the tracker under another name (some ad blockers block "script.js" from known Umami hosts).
+      # If you set it, set UMAMI_SCRIPT_NAME to the same name on each Gleam site.
+      TRACKER_SCRIPT_NAME: ${TRACKER_SCRIPT_NAME:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/heartbeat || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+    # Not using a tunnel? Remove the cloudflared service and publish a port for your reverse proxy instead:
+    # ports:
+    #   - "127.0.0.1:3000:3000"
+
+  db:
+    image: postgres:${POSTGRES_TAG:-16-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: umami
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - umami-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami -d umami"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  cloudflared:
+    image: cloudflare/cloudflared:${CLOUDFLARED_TAG:-latest}
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      umami:
+        condition: service_healthy
+
+volumes:
+  umami-db:
