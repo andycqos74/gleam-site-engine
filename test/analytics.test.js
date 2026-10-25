@@ -106,7 +106,7 @@ test('with Umami set up, visitors get the tracking script and the policy allows 
   const base = await site(umamiConfig());
   const res = await fetch(`${base}/about`);
   const page = await res.text();
-  assert.match(page, new RegExp(`<script defer src="${umamiUrl}/script.js" data-website-id="${WEBSITE}" data-domains="riverside.example.org" data-exclude-search="true" data-do-not-track="true"></script>`));
+  assert.match(page, new RegExp(`<script defer src="${umamiUrl}/script.js" data-website-id="${WEBSITE}" data-domains="riverside.example.org,www.riverside.example.org" data-exclude-search="true" data-do-not-track="true"></script>`));
   const csp = res.headers.get('content-security-policy');
   assert.match(csp, new RegExp(`script-src 'self' ${umamiUrl};`));
   assert.match(csp, new RegExp(`connect-src 'self' ${umamiUrl};`));
