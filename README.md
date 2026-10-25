@@ -33,6 +33,7 @@ src/                     The engine
   content/store.js       Reading/saving content, validation, change history, content updates
   content/types.js       Field types and date helpers
   theme-api.js           What themes import from the engine
+  analytics.js           Visitor statistics: Umami's tracking script and the Umami API for Admin → Visitors
 public/                  Engine assets, served at /_engine/ (editor.js, editor.css, admin.js)
 themes/<name>/           One folder per theme
   theme.js               The manifest: content model, pages, layout, assets
@@ -63,6 +64,9 @@ deploy/portainer         Portainer stack and its variables
 
 Made a mistake? **Admin → Change history** lists every change with a *Put back* button.
 Contact form messages appear under **Admin → Messages** (and are emailed too if SMTP is set up).
+If the site is connected to Umami (see *Visitor statistics* below), **Admin → Visitors** shows how many people visit,
+which pages they read, where they came from, and their countries and devices, over the last 24 hours, 7 days, 30 days
+or 12 months.
 
 Administrators add and remove editors under **Admin → People**. New people get a one-time password that they must
 change at first sign-in.
@@ -184,6 +188,44 @@ docker run --rm -v <stack>_site-data:/data -v /backups:/backups alpine \
 | `DATA_DIR` | Where the database and photos are kept (`/data` in the image) |
 | `PORT` | Listening port (8080) |
 | `TRUST_PROXY` | Express `trust proxy` setting; defaults to private networks (tunnel/proxy containers) |
+| `UMAMI_URL`, `UMAMI_WEBSITE_ID` | Count visitors with an Umami server (address, and this site's website ID in Umami) |
+| `UMAMI_USERNAME`, `UMAMI_PASSWORD` or `UMAMI_API_KEY` | A view-only Umami login, so Admin → Visitors can show the figures |
+| `UMAMI_API_URL` | Only for Umami Cloud: `https://api.umami.is/v1` (self-hosted: leave blank, it is `UMAMI_URL/api`) |
+| `UMAMI_SCRIPT_NAME` | The tracker's file name, if the Umami server renames it with `TRACKER_SCRIPT_NAME` (default `script.js`) |
+
+## Visitor statistics (Umami)
+
+Sites count visitors with [Umami](https://umami.is), an open-source, privacy-friendly alternative to Google Analytics.
+Umami runs on its own (one server for every site, Gleam or not) and counts visits without cookies and without
+storing IP addresses. Gleam adds two things:
+
+- **The tracking script.** With `UMAMI_URL` and `UMAMI_WEBSITE_ID` set, every public page loads Umami's script, and the
+  site's Content-Security-Policy allows the Umami server. Signed-in editors are not counted. The script is set to
+  ignore query strings (they can carry personal details) and visitors whose browser sends *Do Not Track*, and
+  `data-domains` limits counting to the `BASE_URL` host, so test copies of a site don't count.
+- **Admin → Visitors**, showing the site's figures read from the Umami API by the server (the Umami login never
+  reaches a browser, and figures are cached for five minutes). If Umami is unreachable the page says why; the public
+  site is unaffected.
+
+To connect a site:
+
+1. Run an Umami server, for example with the Umami Portainer stack in `deploy/umami/`, at an address such as
+   `https://stats.example.org`.
+2. In Umami, **Settings → Websites → Add website** with the site's domain, and copy its **Website ID**.
+3. Give Gleam a login that can only read statistics. Once, in Umami: create a team (**Settings → Teams → Create
+   team**, e.g. *Websites*); move each website into it (the website's **Settings → Transfer**); create a user with role
+   **View only** (**Admin → Users → Create user**, e.g. `gleam`); and add that user to the team with role **Team view
+   only** (the team's **Add member**). That account sees the team's websites and can change nothing; one account
+   serves every site.
+4. On the site's stack, set `UMAMI_URL`, `UMAMI_WEBSITE_ID`, `UMAMI_USERNAME` and `UMAMI_PASSWORD` (or
+   `UMAMI_API_KEY` with an API key made while signed in as that user), then redeploy.
+
+Leave two-factor sign-in off for the Gleam account (Gleam can't answer the code). Umami Cloud works too: set
+`UMAMI_URL=https://cloud.umami.is`, `UMAMI_API_URL=https://api.umami.is/v1` and `UMAMI_API_KEY`.
+
+Before turning it on, mention it in the site's privacy policy, e.g. *"We count visits with Umami, run on our own
+server. It doesn't use cookies or store your IP address, and we can't identify you from it."* (The QoS Privacy page
+and the B-OOK policy currently say the site uses no analytics.)
 
 ## Running more than one site
 
@@ -225,7 +267,7 @@ Copy `themes/starter` to `themes/<your-name>` and edit. A theme is a folder with
   | `head(k, { page, version })` | Optional extra `<head>` content (font preloads, early scripts) |
   | `stylesheets`, `scripts` | Asset paths in the theme's `public/` folder |
   | `contact: { path, topics }` | Optional: the page whose form posts `name`, `email`, `topic`, `message` (and an empty `website` honeypot) |
-  | `notFound(k)`, `favicon`, `shareImage`, `adminLogo`, `colours`, `csp` | Optional extras (`csp: { frameSrc: [...] }` allows e.g. a map embed) |
+  | `notFound(k)`, `favicon`, `shareImage`, `adminLogo`, `colours`, `csp` | Optional extras (`csp: { frameSrc: [...] }` allows e.g. a map embed; also `imgSrc`, `styleSrc`, `scriptSrc`, `fontSrc`, `connectSrc`) |
 
 - **Templates** get `k`, the engine's toolkit. For single fields: `k.text(key, { tag, cls })`, `k.headline`,
   `k.rich`, `k.image`, `k.link(key)` (words in `key`, address in `key.url`), `k.value(key)`. For lists:
