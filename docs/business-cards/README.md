@@ -1,6 +1,9 @@
 # Digital business cards: research and plan
 
-Status: research and planning, October 2026. Nothing here is built yet.
+Status: Phase 1 is built (October 2026), without NFC; see [Business cards](../../README.md#business-cards) in the main
+README for how to use it. Decided since the first draft: cards are an option in Gleam for every site, administrators
+make and edit all cards (no self-editing), there's no "share your details back" form, and NFC is left for later (it
+may come back as phone-to-phone sharing).
 
 This plan adds digital business cards to the engine, similar to [Blinq](https://blinq.me/solutions/digital-business-card)
 and [HiHello](https://www.hihello.com/features/digital-business-cards). An administrator creates a card for each
@@ -36,10 +39,10 @@ Both products offer roughly the same features. The table shows what each one mea
 | Card page on the web, opens without an app | Yes | **Phase 1** |
 | QR code to scan, download or print | Yes | **Phase 1**, made on the server |
 | Save contact to the phone (vCard) | Yes | **Phase 1** |
-| NFC card or tag that opens the card | Yes, they sell branded cards | **Phase 1** for writing a tag from Android; buy blank or printed cards from any supplier |
+| NFC card or tag that opens the card | Yes, they sell branded cards | Later (see [NFC](#nfc)); phone-to-phone sharing may be explored instead |
 | Admin creates cards for staff, with company branding | Business plans | **Phase 1** |
-| Staff can edit their own card | Yes | Phase 2 (link a card to an existing editor account) |
-| Lead capture: "share your details back" form | Yes | Phase 2, delivered to **Admin → Messages** |
+| Staff can edit their own card | Yes | Not planned: administrators edit cards |
+| Lead capture: "share your details back" form | Yes | Not planned: *Save contact* only |
 | Analytics (views, saves) | Paid plans | Phase 1 counters; Umami already counts page views |
 | Email signature and video-call background | Yes | Phase 2 signature snippet; backgrounds left out |
 | Apple Wallet / Google Wallet pass | Yes | Phase 3, optional (needs developer accounts, see below) |
@@ -59,12 +62,10 @@ Both products offer roughly the same features. The table shows what each one mea
    *Save contact*, tap-to-call, tap-to-email and the links.
 4. A **vCard download** (`.vcf`) that includes the photo.
 5. A **QR code** as SVG and PNG on the admin screen, ready to print or download.
-6. **Write to NFC tag**: a button on the admin screen that works in Chrome on Android (see below). On other devices it
-   shows the link to copy into an NFC writing app.
-7. View and save **counters** on each card.
+6. View and save **counters** on each card.
 
-**Out of scope for now:** wallet passes, staff self-editing, the lead-capture form, email signatures, CSV import and
-CRM sync (see [Phased plan](#phased-plan)).
+**Out of scope for now:** NFC, wallet passes, email signatures, CSV import and CRM sync (see
+[Phased plan](#phased-plan)). Staff self-editing and the lead-capture form were dropped.
 
 ## How it works
 
@@ -98,6 +99,9 @@ details, so editing a card never breaks a QR code or an NFC tag that is already 
   "share in person" flow the apps offer.
 
 ### NFC
+
+> Not built: NFC is set aside for now, and may come back as phone-to-phone sharing. The notes below are kept for
+> then. Any NFC tag written with a card's address works with the cards as built.
 
 NFC is possible, with one limitation: only Chrome on Android can **write** a tag from a web page. Any modern phone
 can **read** one.
@@ -151,7 +155,6 @@ The feature reuses what the engine already has:
 | Organisation-wide settings | A JSON value in the `meta` table, as the chat assistant's settings are stored |
 | Branding | `theme.adminLogo`, `theme.colours`, `site.name` as defaults |
 | Visitor counts | Umami already tracks page views. The *Save contact* button gets `data-umami-event="card-save"` |
-| Lead capture (Phase 2) | The `messages` table and **Admin → Messages**, with `source = 'card'` and a *Cards* tab, the same way phone messages were added |
 
 The card page is drawn by the **engine**, as the admin screens are, not by the theme's layout. That way it looks
 like a card rather than a full website page, it loads fast on a phone, and every theme gets it with no work. It
@@ -160,13 +163,12 @@ function in its manifest.
 
 ## Data model
 
-New table in `src/db.js` (created by `SCHEMA` on new and existing databases, as all tables are):
+New table, created by `src/cards.js` on new and existing databases (as the chat assistant creates its own):
 
 ```sql
 CREATE TABLE IF NOT EXISTS cards (
   id INTEGER PRIMARY KEY,
   code TEXT NOT NULL UNIQUE,         -- in the address /c/<code>; random, never changes or gets reused
-  user_id INTEGER REFERENCES users (id) ON DELETE SET NULL,  -- Phase 2: the editor who may edit this card
   data TEXT NOT NULL,                -- JSON: name, pronouns, title, department, email, phone, mobile,
                                      --       photo, bio, links: [{ label, url }]
   active INTEGER NOT NULL DEFAULT 1, -- 0 = deactivated: the page says the person has moved on
@@ -180,8 +182,8 @@ CREATE TABLE IF NOT EXISTS cards (
 
 - **Code:** 8 characters from the lookalike-free alphabet already used by `randomPassword()` (about 10^13
   possibilities), so nobody can guess or list the cards.
-- **Organisation settings:** `meta` key `cards.settings`, holding `{ enabled, orgName, logo, accent, address, website,
-  showQrOnCard, allowExchange }`.
+- **Organisation settings:** `meta` key `cards.settings`, holding `{ enabled, orgName, logo, accent, website, phone,
+  address }`.
 - **Counters:** a plain `UPDATE ... SET views = views + 1`. Signed-in users and obvious bots aren't counted. Counters
   never write a revision.
 
@@ -189,14 +191,13 @@ CREATE TABLE IF NOT EXISTS cards (
 
 | Route | Who | What |
 | --- | --- | --- |
-| `GET /c/:code` | Anyone | The card page. Deactivated: a short page saying "<Name> no longer works at <Org>" with a link to the site's contact page (HTTP 410). Unknown: 404 |
+| `GET /c/:code` | Anyone | The card page. Deactivated: "This business card is no longer in use", with nothing about the person and a link to the organisation's website (HTTP 410). Unknown: 404 |
 | `GET /c/:code.vcf` | Anyone | vCard download; counts a save |
 | `GET /c/:code/qr.svg`, `qr.png` | Anyone | The QR code (so it can be used in an email signature) |
-| `GET /admin/cards` | Admin | List with search, views and saves, and *Active* / *Deactivated* filter |
+| `GET /admin/cards` | Admin | List of cards with their links, views and saves; deactivated cards last |
 | `GET/POST /admin/cards/new`, `/admin/cards/:id` | Admin | Add or edit a card (photo upload through the existing `/api/media`) |
-| `POST /admin/cards/:id/deactivate`, `/delete` | Admin | Deactivate or erase a card |
+| `POST /admin/cards/:id/active`, `/delete` | Admin | Deactivate or reactivate, or erase a card |
 | `GET/POST /admin/cards/settings` | Admin | Organisation settings and the on/off switch |
-| `POST /c/:code/exchange` | Anyone (Phase 2) | "Share your details": stored in Messages; same honeypot and rate limit as the contact form |
 
 Card pages carry `<meta name="robots" content="noindex">` and are left out of `sitemap.xml`. `robots.txt` gains
 `Disallow: /c/`. With the feature off, every `/c/` route returns 404.
@@ -206,13 +207,13 @@ Card pages carry `<meta name="robots" content="noindex">` and are left out of `s
 **Business cards (list):** photo, name, title, views, saves and active status, with *New card* and *Organisation
 settings* buttons. The dashboard gets a tile for it, as it has for the chat assistant.
 
-**Card editor:** the form on the left and a live phone-sized preview on the right. Below it, the sharing panel:
+**Card editor:** the form on the left, and on the right the sharing panel:
 
-- The card's address with *Copy*
-- The QR code with *Download SVG* / *Download PNG*
-- *Write to NFC tag* (Chrome on Android only), *Lock tag* (permanent, with a confirm step) and a short how-to for
-  iPhone users
-- *Email this card to <person>* (when SMTP is set up), with the link and QR image, so they can add it to their phone
+- The QR code, with *SVG for print* / *PNG* downloads
+- The card's address with *Copy link* and *Open card*
+- Views and saves, *Deactivate* / *Reactivate* and *Delete permanently*
+
+Later: *Email this card to <person>* (when SMTP is set up), and NFC (see above).
 
 ## Privacy (UK GDPR)
 
@@ -225,8 +226,7 @@ Cards publish employees' personal data, so:
 - **Deactivate** (someone leaves) hides the details at once. **Delete** erases the row; the uploaded photo stays in
   the photo library, as with other uploads, until someone removes it. Revisions of a deleted card are erased too,
   so the person's details don't survive in the change history.
-- Phase 2's exchange form needs a consent line ("<Org> will keep your details to get back to you") and a link to
-  the privacy policy. The QoS privacy page needs a sentence about cards before it goes live.
+- The QoS privacy page needs a sentence about cards before it goes live.
 
 ## Dependencies and costs
 
@@ -255,7 +255,7 @@ running costs are optional ones (physical cards, the Apple Developer fee).
 
 ## Phased plan
 
-**Phase 1: cards, QR, vCard and NFC (one PR)**
+**Phase 1: cards, QR and vCard (built)**
 
 1. `cards` table, card store (CRUD, revisions, restore branch) and settings in `meta`
 2. Admin list, editor, organisation settings and dashboard tile
@@ -263,16 +263,12 @@ running costs are optional ones (physical cards, the Apple Developer fee).
    `robots.txt`
 4. vCard builder with escaping, folding and photo, plus unit tests
 5. QR SVG and PNG endpoints
-6. NFC write and lock button in `public/admin.js`, with the iPhone fallback text
-7. View and save counters, and the Umami event attribute
-8. Tests in `test/engine.test.js` (routes, admin-only access, 404 when off, vCard content) and a README section
+6. View and save counters, and the Umami event attribute
+7. Tests in `test/cards.test.js` (routes, admin-only access, 404 when off, vCard content) and a README section
 
-**Phase 2: staff and leads**
+**Phase 2: sharing further**
 
-- Link a card to an editor account so staff can edit their own card. Administrators choose which fields are locked
-  (for example, job title)
-- "Share your details back" form → **Admin → Messages** (`source = 'card'`, a *Cards* tab, emailed like other
-  messages)
+- NFC, or phone-to-phone sharing (see [NFC](#nfc))
 - An email signature snippet (HTML with the photo, name and title, plus the QR code or card link) to copy into
   Outlook or Gmail
 - CSV import for adding many staff at once
@@ -286,12 +282,10 @@ running costs are optional ones (physical cards, the Apple Developer fee).
 
 ## Open questions
 
-1. Is this for one organisation's staff (QoS Community Trust), or something to sell to SolwAI clients? If it's to
-   sell, branded physical cards and the Wallet passes become more important.
-2. Should staff edit their own cards in the first version, or is admin-only enough to start?
-3. Do we want the exchange form (lead capture) at all, or just *Save contact*?
-4. Who buys and writes the NFC cards: a supplier, with the URLs written in, or staff, with blank cards?
-5. Should the card address be on the main domain (`/c/...`), or on a separate short domain for smaller QR codes? The
+Settled: cards are a Gleam option for every site; administrators edit all cards; *Save contact* only, no lead
+form; NFC later.
+
+1. Should the card address be on the main domain (`/c/...`), or on a separate short domain for smaller QR codes? The
    main domain is simpler and the codes are already short.
 
 ## Sources
