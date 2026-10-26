@@ -1,7 +1,7 @@
 // SolwAI theme: the SolwAI marketing site (an AI services home page plus a page per app), from the SolwAI design
 // handover. See README "Writing a theme" for what each key means.
 
-import { FIELDS, COLLECTIONS, SEED } from './content.js';
+import { FIELDS, COLLECTIONS, SEED, CONTACT_TOPICS } from './content.js';
 import { APPS } from './apps.js';
 import { layout, head, notFound } from './pages/layout.js';
 import { home } from './pages/home.js';
@@ -24,6 +24,8 @@ export default {
   layout,
   head,
   notFound,
+  // The contact form is in the home page's contact panel; messages go to Admin > Messages.
+  contact: { path: '/', topics: CONTACT_TOPICS },
 
   stylesheets: ['/css/solwai.css'],
   scripts: ['/js/solwai.js'],

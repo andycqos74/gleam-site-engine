@@ -114,3 +114,32 @@ test('editors can change an app page and its lists in place', async () => {
   const home = await (await c('/')).text();
   assert.match(home, /data-coll="stats" data-coll-label="Figure" data-coll-defaults="\{&quot;region&quot;:&quot;national&quot;\}"/);
 });
+
+test('the home page contact form replaces the mailto links and stores messages for Admin > Messages', async () => {
+  const page = await (await fetch(`${base}/`)).text();
+  assert.doesNotMatch(page, /mailto:/);
+  assert.match(page, /<form class="contact-form" method="post" action="\/#contact"/);
+  assert.match(page, /<option selected>Free AI review<\/option>/);
+  assert.match(page, /<div class="form-success" hidden/);
+
+  const json = { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' };
+  const bad = await fetch(`${base}/`, { ...form({ name: '', email: 'nope', message: '' }), headers: json });
+  assert.equal(bad.status, 422);
+  assert.deepEqual(Object.keys((await bad.json()).errors).sort(), ['email', 'message', 'name']);
+  const errors = await (await fetch(`${base}/`, form({ name: 'Robin', email: 'nope', topic: 'Apps', message: 'Hello' }))).text();
+  assert.match(errors, /id="err-email">Please enter a valid email address\./);
+  assert.match(errors, /value="Robin"/);
+  assert.match(errors, /<option selected>Apps<\/option>/);
+
+  const ok = await fetch(`${base}/`, { ...form({ name: 'Robin', email: 'robin@example.com', topic: 'Apps', message: 'Tell me about Drum' }), redirect: 'manual' });
+  assert.equal(ok.status, 303);
+  assert.equal(ok.headers.get('location'), '/?sent=1');
+  const thanks = await (await fetch(`${base}/?sent=1`)).text();
+  assert.match(thanks, /<div class="form-success" role="status">/);
+  assert.doesNotMatch(thanks, /class="contact-form"/);
+
+  const { c } = await editor();
+  const messages = await (await c('/admin/messages')).text();
+  assert.match(messages, /Tell me about Drum/);
+  assert.match(messages, /robin@example\.com/);
+});

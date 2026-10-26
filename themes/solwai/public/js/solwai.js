@@ -3,6 +3,7 @@
 //   [data-reveal]       rises into place when it scrolls into view
 //   [data-stagger] > *  the same, one after another along a row of cards
 //   [data-count]        a key figure counts up from zero to the number it shows (e.g. 83%, 7,175, 12% → 35%)
+// At the end: the home page's contact form, which sends without leaving the page (it works as a plain form too).
 (function () {
   var root = document.documentElement;
   if (!root.classList.contains('anim')) return;
@@ -63,4 +64,76 @@
     }
     requestAnimationFrame(frame);
   }
+})();
+
+// Contact form: check it in the browser, then send it with fetch() and show the thanks in its place. If anything
+// goes wrong on the way, fall back to a normal form post.
+(function () {
+  var form = document.querySelector('.contact-form');
+  if (!form || document.body.classList.contains('is-editing')) return;
+  var EMAIL = /^[^\s@<>()[\],;:"]+@[^\s@<>()[\],;:"]+\.[a-z]{2,}$/i;
+  var NAMES = ['name', 'email', 'message'];
+  var button = form.querySelector('button[type="submit"]');
+  var label = button.textContent;
+
+  function setError(name, message) {
+    var input = form.elements[name];
+    var old = input.parentNode.querySelector('.field-error');
+    if (old) old.remove();
+    input.removeAttribute('aria-invalid');
+    input.removeAttribute('aria-describedby');
+    if (!message) return;
+    var span = document.createElement('span');
+    span.className = 'field-error';
+    span.id = 'err-' + name;
+    span.textContent = message;
+    input.parentNode.appendChild(span);
+    input.setAttribute('aria-invalid', 'true');
+    input.setAttribute('aria-describedby', span.id);
+  }
+  function validate() {
+    var errors = {};
+    if (!form.elements.name.value.trim()) errors.name = 'Please tell us your name.';
+    if (!EMAIL.test(form.elements.email.value.trim())) errors.email = 'Please enter a valid email address.';
+    if (!form.elements.message.value.trim()) errors.message = 'Please write a message.';
+    return errors;
+  }
+  function showErrors(errors) {
+    NAMES.forEach(function (n) { setError(n, errors[n]); });
+    var first = NAMES.filter(function (n) { return errors[n]; })[0];
+    if (first) form.elements[first].focus();
+  }
+  NAMES.forEach(function (n) {
+    // Recheck a flagged field as it's typed in, so its message is gone before the button is pressed (clearing it on
+    // blur moves the button out from under the pointer mid-click).
+    form.elements[n].addEventListener('input', function () {
+      if (form.elements[n].getAttribute('aria-invalid')) setError(n, validate()[n]);
+    });
+  });
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var errors = validate();
+    if (Object.keys(errors).length) return showErrors(errors);
+    button.disabled = true;
+    button.textContent = 'Sending…';
+    fetch(form.action, { method: 'POST', headers: { Accept: 'application/json' }, body: new URLSearchParams(new FormData(form)) })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          if (res.ok) {
+            var success = document.querySelector('.form-success');
+            form.remove();
+            success.hidden = false;
+            success.tabIndex = -1;
+            success.focus();
+            return;
+          }
+          showErrors(data.errors || {});
+          if (data.errors && data.errors.form) alert(data.errors.form);
+          button.disabled = false;
+          button.textContent = label;
+        });
+      })
+      .catch(function () { form.submit(); });
+  });
 })();
