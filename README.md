@@ -125,8 +125,9 @@ Notes on the design:
 
 Copy, figures and layout follow the SolwAI design handover word for word. Still to do, all editable in place unless noted:
 
-- Replace `[EMAIL]` and `[PHONE]` in the home page's contact panel (click them), and set the address of its
-  *Book a free AI review* button (click it; it starts as `mailto:[EMAIL]`).
+- Replace `[PHONE]` under the home page's contact form (click it). The form's messages appear under **Admin →
+  Messages**; set `CONTACT_TO` and the `SMTP_*` variables to have them emailed too. Its *What's it about?* choices are
+  `CONTACT_TOPICS` in `themes/solwai/content.js`.
 - Give the app pages' *Get started* buttons real addresses (they go to the home page's contact panel for now).
   Unseen's *Read the docs* button stays hidden from visitors until it has an address.
 - Set the addresses of the *Privacy policy* and *Terms of service* links at the bottom of each app page

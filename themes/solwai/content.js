@@ -4,11 +4,13 @@
 import { f } from '../../src/theme-api.js';
 import { APPS, listsOf } from './apps.js';
 
+// The choices in the home page contact form's "What's it about?" list.
+export const CONTACT_TOPICS = ['Free AI review', 'AI services', 'Apps', 'Something else'];
+
 const ACCENTS = { solwai: 'SolwAI blue', organiser: 'Organiser teal', luggage: 'Luggage green', navy: 'Navy' };
 
 const HOME_FIELDS = {
   'site.name': f.text('SolwAI'),
-  'contact.email': f.text('[EMAIL]'),
   'contact.phone': f.text('[PHONE]'),
   'footer.text': f.text('© 2026 SolwAI · Solway Firth, Scotland'),
   'nav.cta': f.text('Book a free AI review'),
@@ -56,7 +58,7 @@ const HOME_FIELDS = {
   'home.contact.title': f.text('Find out where AI will save you time.'),
   'home.contact.text': f.textarea('Book a free 30-minute AI review. We\'ll look at how you work and suggest two or three ideas worth trying. No obligation.'),
   'home.contact.cta': f.text('Book a free AI review'),
-  'home.contact.cta.url': f.url('mailto:[EMAIL]'),
+  'home.contact.success': f.text('Thanks, your message is on its way. We\'ll be in touch within one working day.'),
 
   'home.sources.title': f.text('Sources'),
 };

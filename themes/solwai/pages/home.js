@@ -1,5 +1,6 @@
-import { html } from '../../../src/theme-api.js';
+import { html, attrs } from '../../../src/theme-api.js';
 import { appMark, wordmark } from '../marks.js';
+import { CONTACT_TOPICS } from '../content.js';
 
 const tags = (list) => {
   const words = String(list ?? '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -37,7 +38,31 @@ const serviceCard = (k, it, cls) => k.item(it, html`
   ${k.F(it, 'text', { tag: 'p' })}
   ${tags(it.tags)}`, { tag: 'article', cls });
 
-export function home(k) {
+// The contact panel's form. It posts to the home page (theme.contact), which stores the message for Admin > Messages
+// and emails it if SMTP is set up. Without JavaScript the page reloads at #contact with its errors or thanks.
+function contactForm(k, { form = {}, errors = {}, sent = false, topic } = {}) {
+  const chosen = CONTACT_TOPICS.includes(form.topic) ? form.topic : CONTACT_TOPICS.includes(topic) ? topic : CONTACT_TOPICS[0];
+  const invalid = (name) => attrs({ 'aria-invalid': errors[name] ? 'true' : null, 'aria-describedby': errors[name] ? `err-${name}` : null });
+  const err = (name) => (errors[name] ? html`<span class="field-error" id="err-${name}">${errors[name]}</span>` : '');
+  const phone = k.value('contact.phone');
+  return html`<div class="contact-actions">
+      <div class="form-success"${attrs({ hidden: !sent && !k.ed })} role="status">
+        ${k.text('home.contact.success', { tag: 'p' })}
+      </div>
+      ${sent ? '' : html`<form class="contact-form" method="post" action="/#contact" novalidate>
+        <label>Name<input name="name" autocomplete="name" maxlength="200" required value="${form.name ?? ''}"${invalid('name')}>${err('name')}</label>
+        <label>Email<input name="email" type="email" autocomplete="email" maxlength="200" required value="${form.email ?? ''}"${invalid('email')}>${err('email')}</label>
+        <label>What's it about?<select name="topic">${CONTACT_TOPICS.map((t) => html`<option${attrs({ selected: t === chosen })}>${t}</option>`)}</select></label>
+        <label>Message<textarea name="message" rows="4" maxlength="5000" required${invalid('message')}>${form.message ?? ''}</textarea>${err('message')}</label>
+        <label class="hp" aria-hidden="true">Leave this empty<input name="website" tabindex="-1" autocomplete="off"></label>
+        ${errors.form ? html`<p class="field-error">${errors.form}</p>` : ''}
+        <button class="btn btn-accent btn-lg btn-full" type="${k.ed ? 'button' : 'submit'}">${k.text('home.contact.cta')}</button>
+      </form>`}
+      ${phone || k.ed ? html`<p>Or call <a href="tel:${phone.replace(/[^\d+]/g, '')}">${k.text('contact.phone')}</a></p>` : ''}
+    </div>`;
+}
+
+export function home(k, extra = {}) {
   const stats = k.items('stats');
   const apps = k.items('apps');
   const offers = k.items('offers');
@@ -113,10 +138,7 @@ export function home(k) {
       ${k.text('home.contact.title', { tag: 'h2', cls: 'h2' })}
       ${k.text('home.contact.text', { tag: 'p', cls: 'p17' })}
     </div>
-    <div class="contact-actions">
-      ${k.link('home.contact.cta', { cls: 'btn btn-accent btn-lg btn-full' })}
-      <p><a href="mailto:${k.value('contact.email')}">${k.text('contact.email')}</a> · <a href="tel:${k.value('contact.phone').replace(/[^\d+]/g, '')}">${k.text('contact.phone')}</a></p>
-    </div>
+    ${contactForm(k, extra)}
   </div>
 </section>
 
