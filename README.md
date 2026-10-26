@@ -35,7 +35,8 @@ src/                     The engine
   theme-api.js           What themes import from the engine
   assistant.js           The visitor chat assistant (Claude): settings, site knowledge, conversations
   analytics.js           Visitor statistics: Umami's tracking script and the Umami API for Admin → Visitors
-public/                  Engine assets, served at /_engine/ (editor.js, editor.css, admin.js, chat.js, chat.css)
+  cards.js, card-page.js Digital business cards: storage, vCard, QR codes, and the card page at /c/<code>
+public/                  Engine assets, served at /_engine/ (editor.js, editor.css, admin.js, chat.js, chat.css, card.css)
 themes/<name>/           One folder per theme
   theme.js               The manifest: content model, pages, layout, assets
   public/                The theme's CSS, JS, fonts and images, served at the site root
@@ -74,6 +75,29 @@ or 12 months.
 
 Administrators add and remove editors under **Admin → People**. New people get a one-time password that they must
 change at first sign-in.
+
+## Business cards
+
+Digital business cards for staff, like Blinq or HiHello, on the site's own domain. Each card is a phone-sized page at
+`https://<your site>/c/<code>` with the person's photo, job title, phone numbers, email and links, and a **Save
+contact** button that adds them to the phone's contacts (a vCard, with the photo). Share a card by its QR code or
+its link. The plan and the ideas for later are in [docs/business-cards](docs/business-cards/README.md).
+
+1. An administrator opens **Admin → Business cards → Organisation settings**: the organisation's name, logo and
+   card colour, plus a main phone number, website and address that every card shares. Blank ones use the site's own
+   name, admin logo and address.
+2. **New card** for each person: name, pronouns, job title, team, photo, email, mobile, work phone, website, up to
+   eight links (LinkedIn, a booking page, …) and a line about them. Include personal details only with the
+   person's agreement: anyone with the link can see the card.
+3. Each card's page in the admin shows its QR code (*SVG for print*, *PNG* for email and social media), *Copy link*
+   and *Open card*, and how many times it has been viewed and saved. Visits by signed-in users aren't counted.
+4. Tick *Business cards are in use* in Organisation settings. Until then every card link says "not found" to
+   visitors (signed-in users can still open them to check).
+
+The code in a card's address is random and never changes, so edits never break a printed QR code. When someone
+leaves, **Deactivate** their card: its link then says "This business card is no longer in use" without any of their
+details. **Delete permanently** erases the card and its change history. Card pages are `noindex`, left out of the
+sitemap and blocked in `robots.txt`; with Umami set up, *Save contact* taps are counted as the `card-save` event.
 
 ## Chat assistant
 

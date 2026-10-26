@@ -12,6 +12,8 @@ import { createAssistant, cleanSettings } from './assistant.js';
 import { createKit } from './kit.js';
 import { renderDocument } from './document.js';
 import { createAnalytics, RANGES, DEFAULT_RANGE, AnalyticsError } from './analytics.js';
+import { createCards, cleanCard, cleanSettings as cleanCardSettings, vcard, vcardFileName, qrSvg, qrPng } from './cards.js';
+import { cardPage, retiredCardPage } from './card-page.js';
 import { loadTheme, ROOT } from './theme.js';
 import * as admin from './admin-pages.js';
 import { html } from './html.js';
@@ -43,6 +45,7 @@ export function createApp(config) {
     digestKit: () => createKit({ theme, editing: false, fields: store.fields(), items: (c) => store.items(c), scheduled: store.scheduled }),
   });
   const analytics = createAnalytics(config, { timeZone: theme.timeZone });
+  const cards = createCards(db, { mediaDir, publicDir: theme.publicDir, siteName, theme, baseUrl: config.baseUrl });
   auth.ensureAdmin();
   auth.pruneSessions();
 
@@ -264,7 +267,51 @@ export function createApp(config) {
     res.status(201).json({ ok: true, id: Number(lastInsertRowid) });
   });
 
-  app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /api\nDisallow: /_chat\n${config.baseUrl ? `Sitemap: ${config.baseUrl}/sitemap.xml\n` : ''}`));
+  // Business cards (src/cards.js) at /c/<code>, and /c/<code>.vcf for "Save contact". Off (not found) until an
+  // administrator turns cards on; signed-in users can see them before that, to check them. Visits and saves by
+  // signed-in users, link previews and bots aren't counted.
+  const siteBase = (req) => config.baseUrl || `${req.protocol}://${req.get('host')}`;
+  const cardUrl = (req, card) => `${siteBase(req)}/c/${card.code}`;
+  const NOT_A_PERSON = /bot|crawl|spider|slurp|preview|facebookexternalhit|whatsapp|telegram|discord|skype|embedly|curl|wget/i;
+  const countable = (req) => !req.user && !NOT_A_PERSON.test(req.get('user-agent') ?? '');
+  const cardCtx = (req) => ({ lang: theme.lang, version: VERSION, favicon: theme.favicon, tracker: req.user ? null : analytics?.tracker, baseUrl: config.baseUrl });
+  const findCard = (req, code) => {
+    const org = cards.org();
+    if (!org.enabled && !req.user) return {};
+    return { card: cards.byCode(code), org };
+  };
+
+  app.get('/c/:code', async (req, res, next) => {
+    const m = /^([a-z2-9]{8})(\.vcf)?$/.exec(req.params.code);
+    const { card, org } = m ? findCard(req, m[1]) : {};
+    if (!card) return next();
+    res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });
+    if (!card.active) return res.status(410).type('html').send(String(retiredCardPage(cardCtx(req), { org })));
+    const url = cardUrl(req, card);
+    if (m[2]) {
+      if (countable(req)) cards.countSave(card.id);
+      const body = vcard(card, org, { url, photo: await cards.vcardPhoto(card.data.photo) });
+      res.attachment(vcardFileName(card.data));
+      return res.type('text/vcard; charset=utf-8').send(body);
+    }
+    if (countable(req)) cards.countView(card.id);
+    res.type('html').send(String(cardPage(cardCtx(req), { card, org, url, qr: await qrSvg(url) })));
+  });
+
+  // The card's QR code, for printing (SVG) or email and social media (PNG). ?download=1 saves it as a file.
+  for (const ext of ['svg', 'png']) {
+    app.get(`/c/:code/qr.${ext}`, async (req, res, next) => {
+      const { card } = findCard(req, req.params.code);
+      if (!card?.active) return next();
+      const url = cardUrl(req, card);
+      if (req.query.download) res.attachment(`${vcardFileName(card.data).replace(/\.vcf$/, '')} QR code.${ext}`);
+      res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' });
+      if (ext === 'svg') res.type('image/svg+xml').send(await qrSvg(url));
+      else res.type('image/png').send(await qrPng(url));
+    });
+  }
+
+  app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /api\nDisallow: /_chat\nDisallow: /c/\n${config.baseUrl ? `Sitemap: ${config.baseUrl}/sitemap.xml\n` : ''}`));
   app.get('/sitemap.xml', (req, res) => {
     const base = config.baseUrl || `${req.protocol}://${req.get('host')}`;
     const k = createKit({ theme, editing: false, fields: store.fields(), items: (c) => store.items(c), scheduled: store.scheduled });
@@ -350,7 +397,7 @@ export function createApp(config) {
   adminRouter.get('/history', (req, res) => sendHtml(res, admin.historyPage(adminCtx(req), { revisions: store.revisions() })));
   adminRouter.post('/history/:id/restore', (req, res) => {
     try {
-      store.restore(Number(req.params.id), req.user.id);
+      if (!cards.restore(Number(req.params.id), req.user.id)) store.restore(Number(req.params.id), req.user.id);
       sendHtml(res, admin.historyPage(adminCtx(req, 'Done: the earlier version is back.'), { revisions: store.revisions() }));
     } catch (e) {
       if (!(e instanceof ValidationError)) throw e;
@@ -434,6 +481,61 @@ export function createApp(config) {
   adminRouter.post('/assistant/clear', auth.requireAdmin, (req, res) => {
     assistant.clearLog();
     assistantPage(req, res, { flash: 'The conversation log has been cleared.' });
+  });
+
+  // Business cards (src/cards.js): administrators only.
+  const CARD_FLASH = { created: 'Card created. Share it with the QR code or link.', saved: 'Saved.', settings: 'Saved.' };
+  const newCardForm = (req, res, { data, errors = {}, status = 200 } = {}) => sendHtml(res.status(status), admin.cardEditPage(adminCtx(req), {
+    card: null, data: data ?? cleanCard({}).data, errors,
+  }));
+  const cardById = (req) => (/^\d+$/.test(req.params.id) ? cards.get(Number(req.params.id)) : null);
+  adminRouter.get('/cards', auth.requireAdmin, (req, res) => sendHtml(res, admin.cardsPage(adminCtx(req), { cards: cards.list(), org: cards.org(), base: siteBase(req) })));
+  adminRouter.get('/cards/new', auth.requireAdmin, (req, res) => newCardForm(req, res));
+  adminRouter.post('/cards', auth.requireAdmin, (req, res) => {
+    const { data, errors } = cleanCard(req.body);
+    if (Object.keys(errors).length) return newCardForm(req, res, { data, errors, status: 400 });
+    res.redirect(303, `/admin/cards/${cards.create(data, req.user.id)}?done=created`);
+  });
+  const cardSettings = (req, res, { settings, errors = {}, status = 200 } = {}) => {
+    const org = cards.org();
+    sendHtml(res.status(status), admin.cardSettingsPage(adminCtx(req, CARD_FLASH[req.query.done]), {
+      settings: settings ?? cards.settings(), errors, defaults: { orgName: siteName(), logo: theme.adminLogo ?? theme.favicon, website: config.baseUrl || org.website },
+    }));
+  };
+  adminRouter.get('/cards/settings', auth.requireAdmin, (req, res) => cardSettings(req, res));
+  adminRouter.post('/cards/settings', auth.requireAdmin, (req, res) => {
+    const { settings, errors } = cleanCardSettings(req.body);
+    if (Object.keys(errors).length) return cardSettings(req, res, { settings, errors, status: 400 });
+    cards.saveSettings(settings);
+    res.redirect(303, '/admin/cards/settings?done=settings');
+  });
+  adminRouter.get('/cards/:id', auth.requireAdmin, async (req, res, next) => {
+    const card = cardById(req);
+    if (!card) return next();
+    sendHtml(res, admin.cardEditPage(adminCtx(req, CARD_FLASH[req.query.done]), {
+      card, data: card.data, errors: {}, url: cardUrl(req, card), qr: await qrSvg(cardUrl(req, card)),
+    }));
+  });
+  adminRouter.post('/cards/:id', auth.requireAdmin, async (req, res, next) => {
+    const card = cardById(req);
+    if (!card) return next();
+    const { data, errors } = cleanCard(req.body);
+    if (Object.keys(errors).length) {
+      return sendHtml(res.status(400), admin.cardEditPage(adminCtx(req), { card, data, errors, url: cardUrl(req, card), qr: await qrSvg(cardUrl(req, card)) }));
+    }
+    cards.update(card.id, data, req.user.id);
+    res.redirect(303, `/admin/cards/${card.id}?done=saved`);
+  });
+  adminRouter.post('/cards/:id/active', auth.requireAdmin, (req, res, next) => {
+    const card = cardById(req);
+    if (!card) return next();
+    cards.update(card.id, null, req.user.id, req.body.active === '1');
+    res.redirect(303, `/admin/cards/${card.id}`);
+  });
+  adminRouter.post('/cards/:id/delete', auth.requireAdmin, (req, res) => {
+    const card = cardById(req);
+    if (card) cards.remove(card.id);
+    res.redirect(303, '/admin/cards');
   });
 
   app.use('/admin', adminRouter);
