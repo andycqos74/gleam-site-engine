@@ -13,6 +13,7 @@
 
 Coordinates and sizes in the result are in normalised-image pixels."""
 
+import gc
 import io
 import time
 
@@ -213,8 +214,14 @@ def encode(rgb, alpha=None, quality=80):
     return buf.getvalue()
 
 
+def _model(m):
+    """A model class is created for this step only (and freed after it); anything else is already a model."""
+    return m() if isinstance(m, type) else m
+
+
 def analyse(data, models, progress=lambda p: None):
-    """Image bytes → {"result": {...}, "files": {name: bytes}}."""
+    """Image bytes → {"result": {...}, "files": {name: bytes}}. models maps depth/subject/inpaint to a model, or to
+    a model class to load just for its step, so only one model is in memory at a time."""
     timings = {}
     t = time.perf_counter()
 
@@ -228,9 +235,11 @@ def analyse(data, models, progress=lambda p: None):
     rgb = normalise(data)
     h, w = rgb.shape[:2]
     lap("normalise", 0.05)
-    depth = models["depth"](rgb)
+    depth = _model(models["depth"])(rgb)
+    gc.collect()
     lap("depth", 0.3)
-    subject = models["subject"](rgb).astype(np.float32)
+    subject = _model(models["subject"])(rgb).astype(np.float32)
+    gc.collect()
     subject = cv2.GaussianBlur(subject, (0, 0), 1.0)
     lap("subject", 0.5)
 
@@ -245,6 +254,7 @@ def analyse(data, models, progress=lambda p: None):
         return {"result": {"width": w, "height": h, "layers": layers, "subjects": [], "info": {**info, "timings": timings}}, "files": files}
 
     K = len(cums) + 1
+    inpaint = _model(models["inpaint"]) if K > 1 else None
     soft_subject = subject if subject_band is not None else None
     dilate = max(3, int(round(w * DILATE)))
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * dilate + 1, 2 * dilate + 1))
@@ -255,7 +265,7 @@ def analyse(data, models, progress=lambda p: None):
             if soft_subject is not None and i + 1 <= subject_band:
                 front |= soft_subject > 0.05
             hole = cv2.dilate(front.astype(np.uint8), kernel).astype(bool)
-            colour = fill_behind(rgb, hole, models["inpaint"])
+            colour = fill_behind(rgb, hole, inpaint)
         else:
             colour = rgb
         name = f"layer-{i}.webp"
@@ -266,6 +276,8 @@ def analyse(data, models, progress=lambda p: None):
             files[name] = encode(colour, alpha)
         layers.append({"src": name, "depth": depths[i]})
         progress(0.5 + 0.5 * (i + 1) / K)
+    del inpaint
+    gc.collect()
     lap("layers", 1.0)
 
     subjects = []

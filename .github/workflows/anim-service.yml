@@ -2,7 +2,7 @@ name: Anim service
 
 # The optional processing service for animated photos (services/anim). Runs its tests, then publishes
 #   ghcr.io/<owner>/gleam-anim-service:<branch>, :sha-<commit>, and :latest on the default branch.
-# Only runs when the service changes; the image carries ~490 MB of model weights, downloaded during the build.
+# Only runs when the service changes; the image carries ~410 MB of model weights, downloaded during the build.
 on:
   push:
     branches: ["**"]

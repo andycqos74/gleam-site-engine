@@ -8,6 +8,8 @@
 Jobs run one at a time on a worker thread (the models use every CPU core anyway) and are kept in memory for
 JOB_TTL seconds. Only the engine should reach this service: keep it on the stack's internal network."""
 
+import ctypes
+import gc
 import os
 import queue
 import re
@@ -40,9 +42,13 @@ state = {"models": None, "loader": None, "error": None}
 
 
 def load_models():
+    """Model classes, loaded per step by the pipeline (low memory); with ANIM_KEEP_MODELS=1, loaded once and kept."""
     from .models import load_models as load
 
-    return load()
+    classes = load()
+    if os.environ.get("ANIM_KEEP_MODELS", "").lower() in ("1", "true", "yes"):
+        return {k: cls() for k, cls in classes.items()}
+    return classes
 
 
 def models():
@@ -67,6 +73,16 @@ def worker():
         except Exception as e:  # noqa: BLE001 - report every failure to the caller rather than losing the job
             job.update(status="failed", error=f"Processing failed: {type(e).__name__}: {e}")
         job["finished"] = time.time()
+        release_memory()
+
+
+def release_memory():
+    """Hands memory freed by the models back to the system, so an idle service stays small."""
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass
 
 
 def purge():
@@ -77,7 +93,7 @@ def purge():
 
 
 def start(loader=load_models, warm=True):
-    """Starts the worker thread. warm=True loads the models straight away so the first photo isn't slow."""
+    """Starts the worker thread. warm=True loads the models (or checks they're there) straight away."""
     state["loader"] = loader
     threading.Thread(target=worker, daemon=True, name="anim-worker").start()
     if warm:

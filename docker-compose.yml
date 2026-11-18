@@ -36,15 +36,15 @@ services:
       ASSISTANT_EFFORT: ${ASSISTANT_EFFORT:-medium}
       ANIMATE_MODEL: ${ANIMATE_MODEL:-claude-opus-5-5}
       ANIMATE_EFFORT: ${ANIMATE_EFFORT:-medium}
-      # Optional: depth layers for animated photos. Start the anim service with `docker compose --profile anim up`
+      # Optional: "Separate the subject from the background" for animated photos. Start the anim service with `docker compose --profile anim up`
       # and set ANIM_SERVICE_URL=http://anim:8000 in .env.
       ANIM_SERVICE_URL: ${ANIM_SERVICE_URL:-}
     volumes:
       - site-data:/data
 
-  # Optional processing service for animated photos (services/anim): separates photos into depth layers so people
-  # move against the background. Only started with --profile anim. Needs ~2 GB of memory; the first build
-  # downloads ~490 MB of model weights into the image.
+  # Optional processing service for animated photos (services/anim): lets editors separate the subject from the
+  # background so people move against it. Only started with --profile anim. ~130 MB of memory idle, up to ~1 GB
+  # while processing a photo; the first build downloads ~410 MB of model weights into the image.
   anim:
     profiles: [anim]
     build: services/anim

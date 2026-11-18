@@ -1,8 +1,12 @@
 """The three ONNX models the pipeline uses, each behind a small class so tests can swap in stand-ins.
 
 Weights are baked into the image at build time (see download_models.py); nothing is fetched at runtime.
-MODELS_DIR (default /models) holds depth_anything_v2_small.onnx, lama_fp32.onnx and, for rembg,
-isnet-general-use.onnx (rembg looks in U2NET_HOME, which the Dockerfile points at the same folder)."""
+MODELS_DIR (default /models) holds depth_anything_v2_small_int8.onnx, isnet-general-use.onnx and lama_fp32.onnx.
+
+Memory: the pipeline loads each model only for its own step and frees it straight after (see pipeline.analyse),
+with onnxruntime's memory arena off so freed memory goes back to the system. The peak is then about the largest
+single model (~0.9 GB) instead of all three at once, and an idle service uses ~100 MB. Loading costs ~4 s per
+photo; ANIM_KEEP_MODELS=1 keeps them loaded instead (faster, ~2–3 GB)."""
 
 import os
 
@@ -17,19 +21,20 @@ THREADS = int(os.environ.get("ANIM_THREADS", "0"))  # 0 = onnxruntime picks
 
 def _session(name):
     opts = ort.SessionOptions()
+    opts.enable_cpu_mem_arena = False
     if THREADS:
         opts.intra_op_num_threads = THREADS
     return ort.InferenceSession(os.path.join(MODELS_DIR, name), opts, providers=["CPUExecutionProvider"])
 
 
 class DepthModel:
-    """Depth Anything V2 Small. Returns relative depth, 0 = farthest, 1 = nearest, at the image's size."""
+    """Depth Anything V2 Small (8-bit weights: 27 MB instead of 99 MB, same depth to within 1 %). Returns relative depth, 0 = farthest, 1 = nearest, at the image's size."""
 
     MEAN = np.array([0.485, 0.456, 0.406], np.float32)
     STD = np.array([0.229, 0.224, 0.225], np.float32)
 
     def __init__(self):
-        self.session = _session("depth_anything_v2_small.onnx")
+        self.session = _session("depth_anything_v2_small_int8.onnx")
         self.input = self.session.get_inputs()[0].name
 
     def __call__(self, rgb):
@@ -47,17 +52,23 @@ class DepthModel:
 
 
 class SubjectModel:
-    """rembg with isnet-general-use: a soft 0–1 mask of the main subject(s)."""
+    """isnet-general-use (the model rembg uses, called directly so the image doesn't need rembg and its numba/scipy
+    dependencies): a soft 0–1 mask of the main subject(s). Pre- and post-processing as rembg does it."""
+
+    SIZE = 1024
 
     def __init__(self):
-        from rembg import new_session  # imported here so tests don't need rembg
-
-        self.session = new_session("isnet-general-use")
+        self.session = _session("isnet-general-use.onnx")
+        self.input = self.session.get_inputs()[0].name
 
     def __call__(self, rgb):
-        from rembg import remove
-
-        mask = remove(Image.fromarray(rgb), session=self.session, only_mask=True)
+        h, w = rgb.shape[:2]
+        x = np.asarray(Image.fromarray(rgb).resize((self.SIZE, self.SIZE), Image.LANCZOS), np.float32)
+        x = x / max(float(x.max()), 1e-6) - 0.5
+        pred = self.session.run(None, {self.input: x.transpose(2, 0, 1)[None]})[0][0, 0]
+        lo, hi = float(pred.min()), float(pred.max())
+        pred = (pred - lo) / max(hi - lo, 1e-6)
+        mask = Image.fromarray((pred * 255).astype(np.uint8)).resize((w, h), Image.LANCZOS)
         return np.asarray(mask, np.float32) / 255
 
 
@@ -84,4 +95,8 @@ class InpaintModel:
 
 
 def load_models():
-    return {"depth": DepthModel(), "subject": SubjectModel(), "inpaint": InpaintModel()}
+    """Models as factories: the pipeline creates each when its step starts and drops it afterwards."""
+    for name in ("depth_anything_v2_small_int8.onnx", "isnet-general-use.onnx", "lama_fp32.onnx"):
+        if not os.path.exists(os.path.join(MODELS_DIR, name)):
+            raise FileNotFoundError(f"model weights missing: {os.path.join(MODELS_DIR, name)}")
+    return {"depth": DepthModel, "subject": SubjectModel, "inpaint": InpaintModel}

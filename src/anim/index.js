@@ -4,9 +4,10 @@
 // photo appears (kit.js wraps it in <animated-image>). Animations are stored per photo address in the site's own
 // database; a theme can ship defaults for its own photos in theme.animations.
 //
-// With ANIM_SERVICE_URL set, the processing service (service.js, services/anim) also separates the photo into depth
-// layers, so the subject moves against the background; uploads are sent to it straight away. Without it, or if it
-// fails, the photo plays as one flat layer (and the service is tried again later).
+// Depth layers are an option per photo: with ANIM_SERVICE_URL set, the editor can tick "Separate the subject from
+// the background" and the processing service (service.js, services/anim) cuts the photo into depth layers, so the
+// subject moves against the background. The choice is part of the saved settings (config.depth). Otherwise, and on
+// sites without the service, the photo plays as one flat layer.
 //
 // Claude only ever proposes: its settings load into the editor's preview, and nothing changes for visitors until an
 // editor presses "Save animation".
@@ -23,7 +24,6 @@ import { cleanConfig, MODEL_SCHEMA, PRESETS, EFFECT_TYPES, EFFECT_DEFAULTS, EFFE
 
 const MAX_PROMPT = 1000;
 const LAYER_DEPTH = 0.45; // single-layer photos: a little parallax for the photo, more for the lights in front of it
-const RETRY_MS = 10 * 60e3; // after the processing service fails for a photo, wait this long before trying again
 
 export const SYSTEM_PROMPT = `You set up subtle looping animations for still images on a website. The editor describes what they
 want; you return animation settings that follow the given JSON schema exactly.
@@ -106,8 +106,7 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
   const layerService = config.animLayerService ?? (config.animServiceUrl
     ? createLayerService({ url: config.animServiceUrl, mediaDir, timeoutMs: (config.animServiceTimeout || 300) * 1000, pollMs: config.animServicePollMs })
     : null);
-  const failedAt = new Map(); // src -> when the service last failed for it
-  const inflight = new Map(); // src -> the analysis in progress, so an upload and the editor never process twice
+  const inflight = new Map(); // src -> depth layers being made, so two clicks never process the photo twice
 
   // The file behind a photo address, or null if it isn't one we can analyse.
   function fileFor(src) {
@@ -127,7 +126,7 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
     index = new Map();
     for (const [src, d] of Object.entries(themeDefaults)) index.set(src, { url: d.analysis, config: d.config });
     for (const r of db.prepare('SELECT id, src, analysis, config FROM animations').all()) {
-      if (r.config) index.set(r.src, { url: analysisUrl(r.id, JSON.parse(r.analysis)), config: JSON.parse(r.config) });
+      if (r.config) { const c = JSON.parse(r.config); index.set(r.src, { url: analysisUrl(r.id, JSON.parse(r.analysis), c.depth), config: c }); }
       else index.delete(r.src); // removed by an editor, theme default included
     }
   }
@@ -135,64 +134,67 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
 
   const row = (src) => db.prepare('SELECT * FROM animations WHERE src = ?').get(src);
 
-  // The player caches analysis files for a day; a new set of layers gets a new address.
-  const analysisUrl = (id, a) => `/_anim/${id}.json${a.layered ? `?v=${String(a.layered).slice(0, 12)}` : ''}`;
+  // The analysis file for the player: the flat photo, or (when the settings ask for it and they've been made) the
+  // depth layers, at their own address so cached copies never mix the two.
+  const analysisUrl = (id, a, depth) => `/_anim/${id}.json${depth && a.depth ? `?depth=${a.depth.id.slice(0, 12)}` : ''}`;
 
-  const wantsLayers = (a, src) => !!layerService && !a.layered && Date.now() - (failedAt.get(src) ?? 0) > RETRY_MS;
-
-  // Lights (here, in Node) and depth layers (from the processing service, if there is one), stored per photo.
-  async function build(src, file, existing) {
-    let analysis = existing && JSON.parse(existing.analysis);
-    if (!analysis) {
-      const a = await detectLights(file);
-      analysis = { version: 1, width: a.width, height: a.height, brightness: a.brightness, layers: [{ src, depth: LAYER_DEPTH }], lights: a.lights };
-    }
-    if (wantsLayers(analysis, src)) {
-      try {
-        const L = await layerService.layers(file);
-        // The service may have analysed the photo at another size: subjects are kept in the analysis's pixels.
-        const sx = analysis.width / L.width; const sy = analysis.height / L.height;
-        analysis.layers = L.layers.length > 1 ? L.layers : [{ src, depth: LAYER_DEPTH }];
-        analysis.subjects = L.subjects.map((s) => ({ ...s, bbox: [s.bbox[0] * sx, s.bbox[1] * sy, s.bbox[2] * sx, s.bbox[3] * sy].map(Math.round) }));
-        analysis.layered = L.id;
-        failedAt.delete(src);
-      } catch (e) {
-        failedAt.set(src, Date.now());
-        console.error(`Animated photo ${src}: ${e.message}. It plays as one layer for now.`);
-      }
-    }
-    if (existing) {
-      db.prepare('UPDATE animations SET analysis = ? WHERE src = ?').run(JSON.stringify(analysis), src);
-    } else {
-      // A theme default (if any) keeps playing until an editor saves something else.
-      const d = themeDefaults[src];
-      db.prepare('INSERT OR IGNORE INTO animations (src, analysis, config, updated_at) VALUES (?, ?, ?, ?)')
-        .run(src, JSON.stringify(analysis), d ? JSON.stringify(d.config) : null, now());
-    }
-    buildIndex();
-  }
-
-  // Analyses the photo the first time it's needed and keeps the result. A photo analysed while the processing
-  // service was missing or failing gets its layers the next time it's opened.
+  // Analyses the photo for lights the first time it's needed and keeps the result.
   async function analyse(src) {
     const file = fileFor(src);
     if (!file) throw new ValidationError('Only photos uploaded to this site or included with its design can be animated.');
     let r = row(src);
-    if (!r || wantsLayers(JSON.parse(r.analysis), src)) {
-      if (!r && !fs.existsSync(file)) throw new ValidationError('That photo could not be found.');
-      if (!inflight.has(src)) inflight.set(src, build(src, file, r).finally(() => inflight.delete(src)));
-      await inflight.get(src);
+    if (!r) {
+      if (!fs.existsSync(file)) throw new ValidationError('That photo could not be found.');
+      const a = await detectLights(file);
+      const analysis = { version: 1, width: a.width, height: a.height, brightness: a.brightness, layers: [{ src, depth: LAYER_DEPTH }], lights: a.lights };
+      // A theme default (if any) keeps playing until an editor saves something else.
+      const d = themeDefaults[src];
+      db.prepare('INSERT OR IGNORE INTO animations (src, analysis, config, updated_at) VALUES (?, ?, ?, ?)')
+        .run(src, JSON.stringify(analysis), d ? JSON.stringify(d.config) : null, now());
       r = row(src);
+      buildIndex();
     }
     return { id: r.id, analysis: JSON.parse(r.analysis), config: r.config ? JSON.parse(r.config) : null };
   }
 
-  // Starts the analysis of a newly uploaded photo in the background when the processing service is set up, so the
-  // layers are usually ready by the time an editor opens the Animate panel.
-  function prepare(src) {
-    if (!layerService || !fileFor(src)) return;
-    analyse(src).catch((e) => console.error(`Animated photo ${src}: ${e.message}`));
+  // Depth layers for one photo, made by the processing service when an editor asks for them (once per photo; the
+  // layers are kept in <mediaDir>/anim/). Returns what the editor's preview needs. Visitors only get them once the
+  // editor saves settings with depth switched on.
+  async function makeDepth(src) {
+    if (!layerService) throw new ValidationError('Separating the subject needs the processing service, which isn’t set up on this server.');
+    let { id, analysis } = await analyse(src);
+    if (!analysis.depth) {
+      if (!inflight.has(src)) {
+        inflight.set(src, (async () => {
+          let L;
+          try {
+            L = await layerService.layers(fileFor(src));
+          } catch (e) {
+            console.error(`Animated photo ${src}: ${e.message}`);
+            throw Object.assign(new Error('The photo couldn’t be separated just now. Try again in a minute, or animate it without.'), { status: 502, expose: true });
+          }
+          if (L.layers.length < 2) return; // nothing stands apart from the background
+          // The service may have analysed the photo at another size: subjects are kept in the analysis's pixels.
+          const sx = analysis.width / L.width; const sy = analysis.height / L.height;
+          const subjects = L.subjects.map((s) => ({ ...s, bbox: [s.bbox[0] * sx, s.bbox[1] * sy, s.bbox[2] * sx, s.bbox[3] * sy].map(Math.round) }));
+          const a = JSON.parse(row(src).analysis);
+          a.depth = { id: L.id, layers: L.layers, subjects };
+          db.prepare('UPDATE animations SET analysis = ? WHERE src = ?').run(JSON.stringify(a), src);
+        })().finally(() => inflight.delete(src)));
+      }
+      await inflight.get(src);
+      ({ id, analysis } = await analyse(src));
+    }
+    return depthInfo(id, analysis);
   }
+
+  const depthInfo = (id, a) => ({
+    available: !!layerService,
+    ready: !!a.depth,
+    url: a.depth ? analysisUrl(id, a, true) : null,
+    layers: a.depth?.layers.length ?? 1,
+    subjects: a.depth?.subjects.length ?? 0,
+  });
 
   // What the editor's Animate panel needs.
   async function panel(src) {
@@ -200,14 +202,11 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
     const start = suggestPreset(analysis);
     return {
       src,
-      analysisUrl: analysisUrl(id, analysis),
+      analysisUrl: analysisUrl(id, analysis, false),
       width: analysis.width,
       height: analysis.height,
-      found: {
-        nodes: analysis.lights.nodes.length, stars: analysis.lights.stars.length, hub: !!analysis.lights.hub,
-        layers: analysis.layers.length, subjects: analysis.subjects?.length ?? 0,
-      },
-      layering: !!layerService,
+      found: { nodes: analysis.lights.nodes.length, stars: analysis.lights.stars.length, hub: !!analysis.lights.hub },
+      depth: depthInfo(id, analysis),
       config: saved,
       saved: !!saved,
       suggested: start,
@@ -221,6 +220,7 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
   async function save(src, input, userId) {
     const { analysis } = await analyse(src);
     const clean = input == null ? null : cleanConfig(input, analysis);
+    if (clean?.depth && !analysis.depth) clean.depth = false; // switched on, but the layers were never made
     db.prepare('UPDATE animations SET config = ?, updated_at = ?, updated_by = ? WHERE src = ?')
       .run(clean ? JSON.stringify(clean) : null, now(), userId ?? null, src);
     buildIndex();
@@ -228,11 +228,14 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
   }
 
   // The analysis file the player loads.
-  function analysisFile(id) {
+  function analysisFile(id, depthKey) {
     const r = db.prepare('SELECT analysis FROM animations WHERE id = ?').get(id);
     if (!r) return null;
     const a = JSON.parse(r.analysis);
-    return { version: 1, width: a.width, height: a.height, layers: a.layers, lights: a.lights, ...(a.subjects ? { subjects: a.subjects } : {}) };
+    const flat = { version: 1, width: a.width, height: a.height, layers: a.layers, lights: a.lights };
+    if (!depthKey) return flat;
+    if (!a.depth || !a.depth.id.startsWith(String(depthKey)) || String(depthKey).length < 8) return null;
+    return { ...flat, layers: a.depth.layers, subjects: a.depth.subjects };
   }
 
   // Asks Claude for settings from the editor's description. Returns { config, note, needsReview } for review in the
@@ -251,7 +254,7 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
       { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image.toString('base64') } },
       { type: 'text', text: [
         `Analysis of the image (coordinates in image pixels; the picture above is scaled to ${meta.width} × ${meta.height}, so multiply what you see by ${round2(analysis.width / meta.width)}):`,
-        analysisSummary(analysis),
+        analysisSummary(current?.depth && analysis.depth ? { ...analysis, layers: analysis.depth.layers, subjects: analysis.depth.subjects } : analysis),
         current ? `Current settings: ${JSON.stringify(current)}` : 'No current settings.',
         `The editor asks: ${words}`,
       ].join('\n\n') },
@@ -268,7 +271,7 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
     const out = result.output ?? {};
     const effects = (Array.isArray(out.effects) ? out.effects : []).filter((e) => EFFECT_TYPES.includes(e?.type))
       .map((e) => (e.type === 'particles' ? { ...e, region: { bbox: e.bbox } } : e));
-    const clean = cleanConfig({ ...out, effects, pauseButton: current?.pauseButton }, analysis);
+    const clean = cleanConfig({ ...out, effects, pauseButton: current?.pauseButton, depth: current?.depth }, analysis);
     // Light effects with no lights to work on would do nothing: drop them and say so.
     const L = analysis.lights;
     const usable = clean.effects.filter((e) => !(e.type === 'twinkle' && !L.stars.length) && !(e.type === 'sparkle' && !L.nodes.length) && !(e.type === 'pulses' && (!L.hub || L.nodes.length < 3)));
@@ -277,7 +280,7 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
     return { config: { ...clean, effects: usable }, note, needsReview: !!out.needsReview || usable.some((e) => e.type === 'particles') };
   }
 
-  return { lookup, analyse, prepare, panel, save, suggest, analysisFile, hasKey, fileFor };
+  return { lookup, analyse, makeDepth, panel, save, suggest, analysisFile, hasKey, fileFor };
 }
 
 const round2 = (n) => Math.round(n * 100) / 100;

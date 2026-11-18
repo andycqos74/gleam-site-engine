@@ -37,7 +37,7 @@ export function suggestPreset(analysis) {
   const nodes = analysis?.lights?.nodes?.length ?? 0;
   const dark = (analysis?.brightness ?? 1) < 0.35;
   // A subject cut out by the processing service: the subject drifts against the background.
-  if (analysis?.subjects?.length && nodes < 8) return 'subject';
+  if ((analysis?.depth?.subjects ?? analysis?.subjects)?.length && nodes < 8) return 'subject';
   if (dark && nodes >= 8) return 'network';
   if (dark && nodes >= 3) return 'subtle';
   return 'subject';
@@ -108,6 +108,8 @@ export function cleanConfig(input, analysis = {}) {
     speed: round(num(input.speed, 0.25, 2, 1), 2),
     intensity: round(num(input.intensity, 0, 1, 0.6), 2),
     pauseButton: bool(input.pauseButton, true),
+    // Play the photo's depth layers (subject cut out from the background) instead of the flat photo.
+    depth: bool(input.depth, false),
     effects: out,
   };
 }

@@ -317,7 +317,8 @@ export function createApp(config) {
 
   // The analysis file an animated photo's player loads (light positions and layers). Immutable per photo.
   app.get('/_anim/:id.json', (req, res, next) => {
-    const a = /^\d+$/.test(req.params.id) ? animations.analysisFile(Number(req.params.id)) : null;
+    const depth = typeof req.query.depth === 'string' ? req.query.depth : null;
+    const a = /^\d+$/.test(req.params.id) ? animations.analysisFile(Number(req.params.id), depth) : null;
     if (!a) return next();
     res.set('Cache-Control', 'public, max-age=86400').json(a);
   });
@@ -589,7 +590,6 @@ export function createApp(config) {
   api.post('/media', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Choose a photo to upload.' });
     const saved = await media.save(req.file.buffer, req.file.originalname, req.user.id);
-    animations.prepare(saved.url); // depth layers in the background, if the processing service is set up
     res.json({ ok: true, ...saved });
   });
   // The editor's photo library: everything uploaded, then the photos that ship with the theme (public/img).
@@ -607,6 +607,8 @@ export function createApp(config) {
   // visitors when an editor saves them here.
   const animSrc = (req) => String(req.body?.src ?? req.query.src ?? '');
   api.post('/animations/panel', async (req, res) => res.json(await animations.panel(animSrc(req))));
+  // Depth layers for the photo (optional; needs ANIM_SERVICE_URL). Can take up to a minute the first time.
+  api.post('/animations/depth', async (req, res) => res.json(await animations.makeDepth(animSrc(req))));
   api.put('/animations', async (req, res) => res.json({ ok: true, config: await animations.save(animSrc(req), req.body.config ?? null, req.user.id) }));
   const aiHits = new Map();
   api.post('/animations/suggest', async (req, res) => {
@@ -639,7 +641,7 @@ export function createApp(config) {
     const status = err instanceof ValidationError ? 400 : err.code === 'LIMIT_FILE_SIZE' ? 413 : err.status ?? 500;
     const message = err instanceof ValidationError ? err.message
       : err.code === 'LIMIT_FILE_SIZE' ? 'That photo is too large (25 MB maximum).'
-        : status < 500 ? err.message : 'Something went wrong. Please try again.';
+        : status < 500 || err.expose ? err.message : 'Something went wrong. Please try again.';
     if (status >= 500) console.error(err);
     if (req.path.startsWith('/api/') || req.accepts(['html', 'json']) === 'json') return res.status(status).json({ error: message });
     res.status(status).type('text').send(message);

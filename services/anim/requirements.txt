@@ -1,8 +1,8 @@
-# Python 3.11 (see Dockerfile). Pinned so a rebuild gives the same service.
+# Python 3.11 (see Dockerfile). Pinned so a rebuild gives the same service. No rembg: the pipeline calls the same
+# isnet-general-use model directly, which keeps numba, llvmlite, scipy and scikit-image (~350 MB) out of the image.
 fastapi==0.163.2
-uvicorn[standard]==0.54.0
+uvicorn==0.54.0
 python-multipart==0.0.34
-rembg[cpu]==2.0.87
 onnxruntime==1.32.0
 opencv-python-headless==5.1.0.95
 numpy==2.4.6

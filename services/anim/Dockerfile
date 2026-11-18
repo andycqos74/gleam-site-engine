@@ -2,16 +2,15 @@
 # the background. See README.md here and "Animated photos" in the main README.
 #   docker build -t gleam-anim-service services/anim
 #   docker build --target test services/anim        runs the tests (stand-in models, no weights needed)
-# The model weights (~490 MB) are downloaded once, here, and baked into the image: nothing is fetched at runtime.
+# The model weights (~410 MB) are downloaded once, here, and baked into the image: nothing is fetched at runtime.
+# The whole image is ~900 MB. It needs ~1 GB of memory while processing a photo and ~100 MB when idle.
 
 FROM python:3.11-slim-bookworm AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    MODELS_DIR=/models \
-    U2NET_HOME=/models \
-    NUMBA_CACHE_DIR=/tmp/numba
+    MODELS_DIR=/models
 WORKDIR /srv
 COPY requirements.txt ./
 RUN pip install -r requirements.txt

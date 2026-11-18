@@ -42,7 +42,7 @@ services:
       ASSISTANT_EFFORT: ${ASSISTANT_EFFORT:-medium}
       ANIMATE_MODEL: ${ANIMATE_MODEL:-claude-opus-5-5}
       ANIMATE_EFFORT: ${ANIMATE_EFFORT:-medium}
-      # Depth layers for animated photos: uncomment the anim service below and set ANIM_SERVICE_URL=http://anim:8000.
+      # Animated photos, "Separate the subject": uncomment the anim service below and set ANIM_SERVICE_URL=http://anim:8000.
       ANIM_SERVICE_URL: ${ANIM_SERVICE_URL:-}
     volumes:
       - site-data:/data
@@ -53,10 +53,10 @@ services:
     # ports:
     #   - "127.0.0.1:8081:8080"
 
-  # Optional: processing service for animated photos. It separates photos into depth layers (the person cut out,
-  # the background filled in behind them) so people move against the background. Uncomment, set
-  # ANIM_SERVICE_URL=http://anim:8000 in the stack's variables, and redeploy. Needs ~2 GB of memory and a ~2 GB
-  # image (the model weights are inside it). It holds no data and publishes no ports. Several sites on one server
+  # Optional: processing service for animated photos. Adds "Separate the subject from the background" to the
+  # editor's Animate panel (the person cut out, the background filled in behind them, so people move against it).
+  # Uncomment, set ANIM_SERVICE_URL=http://anim:8000 in the stack's variables, and redeploy. ~900 MB image (the
+  # model weights are inside it); ~130 MB of memory idle, up to ~1 GB while processing a photo. It holds no data and publishes no ports. Several sites on one server
   # can share one: give it a fixed container name and put the stacks on a shared network.
   # anim:
   #   image: ghcr.io/andycqos74/gleam-anim-service:${ANIM_TAG:-latest}

@@ -408,7 +408,7 @@
 
   async function animatePanel(src, alt) {
     let info;
-    toast('Looking at the photo… (the first time can take up to a minute)', { sticky: true });
+    toast('Looking at the photo…', { sticky: true });
     try {
       [info] = await Promise.all([api('POST', '/api/animations/panel', { src }), loadPlayer()]);
       document.querySelector('.ed-toast').hidden = true;
@@ -428,13 +428,9 @@
     const box = el('div', { className: 'ed-anim-box' });
     const stage = el('div', { className: 'ed-anim-stage' }, [player, box]);
 
-    const lights = info.found.nodes || info.found.stars
+    const found = info.found.nodes || info.found.stars
       ? `Found ${info.found.nodes} lights and ${info.found.stars} small points of light in this photo.`
       : 'No lights found in this photo: drift, parallax and particles suit it best.';
-    const depth = info.found.subjects
-      ? ' The subject has been cut out from the background, so parallax moves it against the background.'
-      : info.found.layers > 1 ? ` The photo has been separated into ${info.found.layers} depth layers for parallax.` : '';
-    const found = lights + depth;
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const presetRow = el('div', { className: 'ed-chips' });
@@ -450,6 +446,27 @@
     const speed = slider('Speed', 0.25, 2, 0.05, () => cfg.speed, (v) => { cfg.speed = v; }, (v) => `${v.toFixed(2)}×`);
     const pause = el('input', { type: 'checkbox', onchange: () => { cfg.pauseButton = pause.checked; refresh(); } });
     const note = el('p', { className: 'ed-anim-note', hidden: true, role: 'status' });
+
+    // Optional depth layers (needs the processing service): the subject is cut out and moves against the background.
+    // Made on the first tick (up to a minute), then kept; part of the saved settings as cfg.depth.
+    const depthCheck = el('input', { type: 'checkbox' });
+    const depthNote = el('span', { className: 'ed-help', role: 'status' });
+    depthCheck.addEventListener('change', async () => {
+      if (depthCheck.checked && !info.depth.ready) {
+        depthCheck.disabled = true;
+        depthNote.textContent = 'Separating the subject from the background… this can take up to a minute.';
+        let failed = false;
+        try { info.depth = await api('POST', '/api/animations/depth', { src }); } catch (e) { failed = true; toast(e.message, { error: true }); }
+        depthCheck.disabled = false;
+        if (!info.depth.ready) {
+          depthCheck.checked = false;
+          depthNote.textContent = failed ? '' : 'Nothing in this photo stands apart from the background, so there’s nothing to separate.';
+          return;
+        }
+      }
+      cfg.depth = depthCheck.checked;
+      refresh();
+    });
 
     const has = (type) => cfg.effects.some((e) => e.type === type);
     function toggle(fx) {
@@ -493,10 +510,14 @@
     });
 
     function refresh(redrawParticles = true) {
+      const shown = cfg.depth && info.depth.url ? info.depth.url : info.analysisUrl;
+      if (player.getAttribute('src') !== shown) player.setAttribute('src', shown);
       player.setAttribute('config', JSON.stringify(cfg));
+      depthCheck.checked = !!cfg.depth;
+      if (cfg.depth) depthNote.textContent = `Cut into ${info.depth.layers} layers${info.depth.subjects ? ', with the subject in front' : ''}. Turn on Parallax (and Slow drift) to see it move.`;
       presetRow.replaceChildren(...Object.entries(info.presets).map(([key, p]) => el('button', {
         type: 'button', className: 'ed-chip', textContent: p.label, ariaPressed: String(key === presetKey),
-        onclick: () => { cfg = { ...clone(p.config), pauseButton: cfg.pauseButton ?? true }; presetKey = key; refresh(); },
+        onclick: () => { cfg = { ...clone(p.config), pauseButton: cfg.pauseButton ?? true, depth: !!cfg.depth }; presetKey = key; refresh(); },
       })));
       effectRow.replaceChildren(...info.effects.map((fx) => el('button', { type: 'button', className: 'ed-chip', textContent: fx.label, ariaPressed: String(has(fx.type)), onclick: () => toggle(fx) })));
       intensity.sync(); speed.sync();
@@ -508,6 +529,7 @@
       el('p', { className: 'ed-help', textContent: found + (reduce ? ' Your device asks for reduced motion, so the preview stays still (visitors with that setting see the still photo too).' : '') }),
       el('div', { className: 'ed-field' }, [el('span', { className: 'ed-label', textContent: 'Start from' }), presetRow]),
       el('div', { className: 'ed-field' }, [el('span', { className: 'ed-label', textContent: 'Effects' }), effectRow]),
+      ...(info.depth.available ? [el('div', { className: 'ed-field' }, [el('label', { className: 'ed-check' }, [depthCheck, ' Separate the subject from the background (people move against it)']), depthNote])] : []),
       particleBox, intensity.row, speed.row,
       el('label', { className: 'ed-check' }, [pause, ' Show a pause button on the photo']),
     ];
@@ -537,7 +559,7 @@
       } catch (e) { toast(e.message, { error: true }); }
     });
     const foot = [saveBtn,
-      el('button', { type: 'button', className: 'ed-btn', textContent: 'Reset to preset', onclick: () => { const k = presetKey ?? info.suggested; cfg = { ...clone(info.presets[k].config), pauseButton: cfg.pauseButton ?? true }; presetKey = k; note.hidden = true; refresh(); } })];
+      el('button', { type: 'button', className: 'ed-btn', textContent: 'Reset to preset', onclick: () => { const k = presetKey ?? info.suggested; cfg = { ...clone(info.presets[k].config), pauseButton: cfg.pauseButton ?? true, depth: !!cfg.depth }; presetKey = k; note.hidden = true; refresh(); } })];
     if (info.saved) {
       foot.push(el('button', { type: 'button', className: 'ed-btn', textContent: 'Remove animation', onclick: async () => {
         if (!confirm('Show this photo still again, everywhere it appears?')) return;

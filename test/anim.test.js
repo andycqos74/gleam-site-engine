@@ -205,43 +205,69 @@ async function uploadPerson(json) {
   return (await json.upload(fd)).json();
 }
 
-test('with ANIM_SERVICE_URL, an uploaded photo of a person gets depth layers and the Subject drift preset', async (t) => {
+test('depth layers are an option per photo: made on request, played only when the settings ask for them', async (t) => {
   const svc = await stubService();
   const s = site({ animServiceUrl: svc.url, animServicePollMs: 5 });
   t.after(() => { s.close(); svc.close(); });
   const json = await s.login();
   const up = await uploadPerson(json);
 
+  // Uploading and opening the panel don't touch the service.
   const panel = await (await json('POST', '/api/animations/panel', { src: up.url })).json();
-  assert.equal(panel.suggested, 'subject');
-  assert.equal(panel.found.layers, 3);
-  assert.equal(panel.found.subjects, 1);
-  assert.match(panel.analysisUrl, /^\/_anim\/\d+\.json\?v=[0-9a-f]{12}$/);
-  // Processed once, although the upload started it and the editor then asked for it.
+  assert.equal(svc.calls.length, 0);
+  assert.deepEqual(panel.depth, { available: true, ready: false, url: null, layers: 1, subjects: 0 });
+  assert.match(panel.analysisUrl, /^\/_anim\/\d+\.json$/);
+
+  // The editor ticks "Separate the subject": the service makes the layers (once, however often it's asked).
+  const [depth, again] = await Promise.all([1, 2].map(async () => (await json('POST', '/api/animations/depth', { src: up.url })).json()));
   assert.equal(svc.calls.filter((c) => c === 'POST /analyse').length, 1);
+  assert.deepEqual(again, depth);
+  assert.equal(depth.ready, true);
+  assert.equal(depth.layers, 3);
+  assert.equal(depth.subjects, 1);
+  assert.match(depth.url, /^\/_anim\/\d+\.json\?depth=[0-9a-f]{12}$/);
   assert.ok(Number(svc.calls.find((c) => c.startsWith('bytes')).split(' ')[1]) > 1000, 'the photo was sent');
 
-  const analysis = await (await fetch(s.base() + panel.analysisUrl)).json();
-  assert.deepEqual(analysis.layers.map((l) => l.depth), [0.05, 0.5, 0.85]);
-  // Layers are stored with the uploads and served from /media/anim/<id>/.
-  for (const l of analysis.layers) {
+  const layered = await (await fetch(s.base() + depth.url)).json();
+  assert.deepEqual(layered.layers.map((l) => l.depth), [0.05, 0.5, 0.85]);
+  for (const l of layered.layers) {
     assert.match(l.src, /^\/media\/anim\/[0-9a-f]{20}\/layer-\d\.webp$/);
     const res = await fetch(s.base() + l.src);
     assert.equal(res.status, 200);
     assert.equal(res.headers.get('content-type'), 'image/webp');
   }
-  assert.ok(fs.existsSync(path.join(s.dataDir, 'media', analysis.layers[0].src.replace('/media/', ''))));
   // The service saw a 1800 × 1200 picture; the subject is kept in the analysis's own pixels (900 × 600).
-  assert.deepEqual(analysis.subjects, [{ label: 'subject', bbox: [300, 150, 300, 450], layer: 2 }]);
+  assert.deepEqual(layered.subjects, [{ label: 'subject', bbox: [300, 150, 300, 450], layer: 2 }]);
+  // The flat analysis is unchanged, and a wrong depth key finds nothing.
+  assert.deepEqual((await (await fetch(s.base() + panel.analysisUrl)).json()).layers, [{ src: up.url, depth: 0.45 }]);
+  assert.equal((await fetch(`${s.base()}${panel.analysisUrl}?depth=0000000000`)).status, 404);
 
-  // Saving the suggested preset: visitors get the layered analysis.
-  await json('PUT', '/api/animations', { src: up.url, config: PRESETS.subject.config });
+  // Saved without depth: visitors get the flat photo. With depth: the layers.
   await json('POST', '/api/save', { fields: { 'home.hero.image': up.url } });
-  const page = await (await fetch(`${s.base()}/`)).text();
-  assert.match(page, new RegExp(`<animated-image class="hero-photo" src="${panel.analysisUrl.replace(/[.?]/g, '\\$&')}"`));
+  const heroSrc = async () => /<animated-image class="hero-photo" src="([^"]+)"/.exec(await (await fetch(`${s.base()}/`)).text())?.[1];
+  const flat = await (await json('PUT', '/api/animations', { src: up.url, config: PRESETS.subject.config })).json();
+  assert.equal(flat.config.depth, false);
+  assert.equal(await heroSrc(), panel.analysisUrl);
+  const on = await (await json('PUT', '/api/animations', { src: up.url, config: { ...PRESETS.subject.config, depth: true } })).json();
+  assert.equal(on.config.depth, true);
+  assert.equal((await heroSrc()).replace(/&amp;/g, '&'), depth.url);
+  const reopened = await (await json('POST', '/api/animations/panel', { src: up.url })).json();
+  assert.equal(reopened.suggested, 'subject');
+  assert.equal(reopened.depth.ready, true);
 });
 
 test('without the service, or when it fails, photos still animate as one layer', async (t) => {
+  const plain = site();
+  t.after(plain.close);
+  const j0 = await plain.login();
+  const up0 = await uploadPerson(j0);
+  const p0 = await (await j0('POST', '/api/animations/panel', { src: up0.url })).json();
+  assert.equal(p0.depth.available, false);
+  assert.equal((await j0('POST', '/api/animations/depth', { src: up0.url })).status, 400);
+  // Depth asked for in saved settings, but never made: plays flat.
+  const saved = await (await j0('PUT', '/api/animations', { src: up0.url, config: { ...PRESETS.subject.config, depth: true } })).json();
+  assert.equal(saved.config.depth, false);
+
   const svc = await stubService({ fail: true });
   const s = site({ animServiceUrl: svc.url, animServicePollMs: 5 });
   const errors = [];
@@ -250,25 +276,19 @@ test('without the service, or when it fails, photos still animate as one layer',
   t.after(() => { console.error = log; s.close(); svc.close(); });
   const json = await s.login();
   const up = await uploadPerson(json);
+  const res = await json('POST', '/api/animations/depth', { src: up.url });
+  assert.equal(res.status, 502);
+  assert.match((await res.json()).error, /couldn’t be separated/);
+  assert.ok(errors.some((e) => /model exploded/.test(e)), errors.join('\n'));
   const panel = await (await json('POST', '/api/animations/panel', { src: up.url })).json();
-  assert.equal(panel.found.layers, 1);
-  assert.equal(panel.suggested, 'subject');
-  assert.match(panel.analysisUrl, /^\/_anim\/\d+\.json$/);
-  const analysis = await (await fetch(s.base() + panel.analysisUrl)).json();
-  assert.deepEqual(analysis.layers, [{ src: up.url, depth: 0.45 }]);
-  assert.ok(errors.some((e) => /model exploded.*one layer/.test(e)), errors.join('\n'));
-  // Not retried straight away.
-  await json('POST', '/api/animations/panel', { src: up.url });
-  assert.equal(svc.calls.filter((c) => c === 'POST /analyse').length, 1);
+  assert.equal(panel.depth.ready, false);
 
   // An unreachable service behaves the same.
-  svc.close();
   const s2 = site({ animServiceUrl: 'http://127.0.0.1:9/' });
   t.after(s2.close);
   const json2 = await s2.login();
   const up2 = await uploadPerson(json2);
-  const p2 = await (await json2('POST', '/api/animations/panel', { src: up2.url })).json();
-  assert.equal(p2.found.layers, 1);
+  assert.equal((await json2('POST', '/api/animations/depth', { src: up2.url })).status, 502);
   assert.ok(errors.some((e) => /unreachable/.test(e)));
 });
 
