@@ -163,3 +163,117 @@ test('Claude proposes settings from a description; they are validated and not sa
   const again = await (await json('POST', '/api/animations/panel', { src: '/img/hero-solway.jpg' })).json();
   assert.equal(again.config.effects.length, 5);
 });
+
+// ---------- depth layers from the optional processing service (services/anim), stubbed over real HTTP ----------
+import http from 'node:http';
+
+// A stand-in for the service: POST /analyse → job id; GET /jobs/<id> is "running" once, then done; layer files are
+// tiny WebPs. opts.fail makes every job fail; opts.down closes the server.
+async function stubService(opts = {}) {
+  const webp = await sharp({ create: { width: 4, height: 4, channels: 4, background: '#0000' } }).webp().toBuffer();
+  const calls = [];
+  let polls = 0;
+  const server = http.createServer((req, res) => {
+    calls.push(`${req.method} ${req.url}`);
+    const send = (status, body, type = 'application/json') => { res.writeHead(status, { 'Content-Type': type }); res.end(type === 'application/json' ? JSON.stringify(body) : body); };
+    if (req.method === 'POST' && req.url === '/analyse') {
+      let size = 0;
+      req.on('data', (c) => { size += c.length; });
+      req.on('end', () => { calls.push(`bytes ${size}`); send(202, { job_id: 'abc123' }); });
+      return;
+    }
+    if (req.url === '/jobs/abc123') {
+      if (opts.fail) return send(200, { status: 'failed', error: 'model exploded' });
+      if (polls++ === 0) return send(200, { status: 'running', progress: 0.4 });
+      return send(200, { status: 'done', progress: 1, result: {
+        width: 1800, height: 1200,
+        layers: [{ src: 'layer-0.webp', depth: 0.05 }, { src: 'layer-1.webp', depth: 0.5 }, { src: 'layer-2.webp', depth: 0.85 }],
+        subjects: [{ label: 'subject', bbox: [600, 300, 600, 900], layer: 2 }],
+      } });
+    }
+    if (/^\/jobs\/abc123\/files\/layer-[0-2]\.webp$/.test(req.url)) return send(200, webp, 'image/webp');
+    send(404, { detail: 'nope' });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { url: `http://127.0.0.1:${server.address().port}/`, calls, close: () => server.close() };
+}
+
+async function uploadPerson(json) {
+  const photo = await sharp({ create: { width: 900, height: 600, channels: 3, background: '#a08070' } }).jpeg().toBuffer();
+  const fd = new FormData();
+  fd.append('file', new Blob([photo], { type: 'image/jpeg' }), 'person.jpg');
+  return (await json.upload(fd)).json();
+}
+
+test('with ANIM_SERVICE_URL, an uploaded photo of a person gets depth layers and the Subject drift preset', async (t) => {
+  const svc = await stubService();
+  const s = site({ animServiceUrl: svc.url, animServicePollMs: 5 });
+  t.after(() => { s.close(); svc.close(); });
+  const json = await s.login();
+  const up = await uploadPerson(json);
+
+  const panel = await (await json('POST', '/api/animations/panel', { src: up.url })).json();
+  assert.equal(panel.suggested, 'subject');
+  assert.equal(panel.found.layers, 3);
+  assert.equal(panel.found.subjects, 1);
+  assert.match(panel.analysisUrl, /^\/_anim\/\d+\.json\?v=[0-9a-f]{12}$/);
+  // Processed once, although the upload started it and the editor then asked for it.
+  assert.equal(svc.calls.filter((c) => c === 'POST /analyse').length, 1);
+  assert.ok(Number(svc.calls.find((c) => c.startsWith('bytes')).split(' ')[1]) > 1000, 'the photo was sent');
+
+  const analysis = await (await fetch(s.base() + panel.analysisUrl)).json();
+  assert.deepEqual(analysis.layers.map((l) => l.depth), [0.05, 0.5, 0.85]);
+  // Layers are stored with the uploads and served from /media/anim/<id>/.
+  for (const l of analysis.layers) {
+    assert.match(l.src, /^\/media\/anim\/[0-9a-f]{20}\/layer-\d\.webp$/);
+    const res = await fetch(s.base() + l.src);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'image/webp');
+  }
+  assert.ok(fs.existsSync(path.join(s.dataDir, 'media', analysis.layers[0].src.replace('/media/', ''))));
+  // The service saw a 1800 × 1200 picture; the subject is kept in the analysis's own pixels (900 × 600).
+  assert.deepEqual(analysis.subjects, [{ label: 'subject', bbox: [300, 150, 300, 450], layer: 2 }]);
+
+  // Saving the suggested preset: visitors get the layered analysis.
+  await json('PUT', '/api/animations', { src: up.url, config: PRESETS.subject.config });
+  await json('POST', '/api/save', { fields: { 'home.hero.image': up.url } });
+  const page = await (await fetch(`${s.base()}/`)).text();
+  assert.match(page, new RegExp(`<animated-image class="hero-photo" src="${panel.analysisUrl.replace(/[.?]/g, '\\$&')}"`));
+});
+
+test('without the service, or when it fails, photos still animate as one layer', async (t) => {
+  const svc = await stubService({ fail: true });
+  const s = site({ animServiceUrl: svc.url, animServicePollMs: 5 });
+  const errors = [];
+  const log = console.error;
+  console.error = (...a) => errors.push(a.join(' '));
+  t.after(() => { console.error = log; s.close(); svc.close(); });
+  const json = await s.login();
+  const up = await uploadPerson(json);
+  const panel = await (await json('POST', '/api/animations/panel', { src: up.url })).json();
+  assert.equal(panel.found.layers, 1);
+  assert.equal(panel.suggested, 'subject');
+  assert.match(panel.analysisUrl, /^\/_anim\/\d+\.json$/);
+  const analysis = await (await fetch(s.base() + panel.analysisUrl)).json();
+  assert.deepEqual(analysis.layers, [{ src: up.url, depth: 0.45 }]);
+  assert.ok(errors.some((e) => /model exploded.*one layer/.test(e)), errors.join('\n'));
+  // Not retried straight away.
+  await json('POST', '/api/animations/panel', { src: up.url });
+  assert.equal(svc.calls.filter((c) => c === 'POST /analyse').length, 1);
+
+  // An unreachable service behaves the same.
+  svc.close();
+  const s2 = site({ animServiceUrl: 'http://127.0.0.1:9/' });
+  t.after(s2.close);
+  const json2 = await s2.login();
+  const up2 = await uploadPerson(json2);
+  const p2 = await (await json2('POST', '/api/animations/panel', { src: up2.url })).json();
+  assert.equal(p2.found.layers, 1);
+  assert.ok(errors.some((e) => /unreachable/.test(e)));
+});
+
+test('ANIM_SERVICE_URL is read from the environment', async () => {
+  const { loadConfig } = await import('../src/config.js');
+  assert.equal(loadConfig({ ANIM_SERVICE_URL: ' http://anim:8000/ ' }).animServiceUrl, 'http://anim:8000');
+  assert.equal(loadConfig({}).animServiceUrl, '');
+});

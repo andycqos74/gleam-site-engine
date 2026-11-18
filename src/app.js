@@ -589,6 +589,7 @@ export function createApp(config) {
   api.post('/media', upload.single('file'), async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'Choose a photo to upload.' });
     const saved = await media.save(req.file.buffer, req.file.originalname, req.user.id);
+    animations.prepare(saved.url); // depth layers in the background, if the processing service is set up
     res.json({ ok: true, ...saved });
   });
   // The editor's photo library: everything uploaded, then the photos that ship with the theme (public/img).

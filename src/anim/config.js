@@ -31,10 +31,13 @@ export const PRESETS = {
 };
 
 // The preset to start from for a freshly analysed image: lights on a dark picture get the light effects; anything
-// else (a photo of people, a room, a landscape) gets the general-purpose drift.
+// else (a photo of people, a room, a landscape) gets the general-purpose drift, as does any photo with a cut-out
+// subject that isn't covered in lights.
 export function suggestPreset(analysis) {
   const nodes = analysis?.lights?.nodes?.length ?? 0;
   const dark = (analysis?.brightness ?? 1) < 0.35;
+  // A subject cut out by the processing service: the subject drifts against the background.
+  if (analysis?.subjects?.length && nodes < 8) return 'subject';
   if (dark && nodes >= 8) return 'network';
   if (dark && nodes >= 3) return 'subtle';
   return 'subject';

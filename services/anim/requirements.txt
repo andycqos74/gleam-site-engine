@@ -1,0 +1,9 @@
+# Python 3.11 (see Dockerfile). Pinned so a rebuild gives the same service.
+fastapi==0.163.2
+uvicorn[standard]==0.54.0
+python-multipart==0.0.34
+rembg[cpu]==2.0.87
+onnxruntime==1.32.0
+opencv-python-headless==5.1.0.95
+numpy==2.4.6
+pillow==13.0.0

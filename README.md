@@ -37,6 +37,7 @@ src/                     The engine
   analytics.js           Visitor statistics: Umami's tracking script and the Umami API for Admin → Visitors
   cards.js, card-page.js Digital business cards: storage, vCard, QR codes, and the card page at /c/<code>
   anim/                  Animated photos: light detection, effect settings, the editor's API and Ask Claude
+services/anim/           Optional processing service for animated photos (Python): depth layers, subject cut-out
 public/                  Engine assets, served at /_engine/ (editor.js, editor.css, admin.js, chat.js, chat.css, card.css,
                          animated-image.js)
 themes/<name>/           One folder per theme
@@ -140,8 +141,31 @@ reduced motion.
 
 The animation belongs to the photo, so it plays wherever that photo appears. *Ask Claude* needs `ANTHROPIC_API_KEY`
 (see *Configuration*); everything else works without it. The SolwAI home page hero comes animated (a theme default
-that editors can change or remove). Not yet: separating people from the background for depth parallax, and video
-export. The design notes are in [docs/animated-images](docs/animated-images/HANDOVER.md).
+that editors can change or remove). Not yet: video export. The design notes are in
+[docs/animated-images](docs/animated-images/HANDOVER.md).
+
+### Depth layers: people moving against the background (optional)
+
+On its own the engine plays every photo as one flat layer. Add the **anim service** (`services/anim`, a separate
+Python container) and photos are separated by depth: the person (or other main subject) is cut out, the background
+behind them is filled in, and the parallax moves the subject against the background. Photos of people then get the
+*Subject drift* preset with nothing else to do.
+
+- **How it works:** each new upload is sent to the service straight away (the editor's Animate panel waits for it if
+  it isn't finished). The service finds depth with *Depth Anything V2*, cuts out the subject with *rembg*
+  (`isnet-general-use`), splits the picture into 2–4 layers and fills each layer in behind the nearer ones with
+  *LaMa*. The layers (WebP, ~20–60 KB each) are kept with the uploads in `/data/media/anim/<id>/`, so each photo is
+  processed once; lights are still found by the engine itself.
+- **Turn it on (docker compose):** set `ANIM_SERVICE_URL=http://anim:8000` in `.env`, then
+  `docker compose --profile anim up --build`. **Portainer:** uncomment the `anim` service in
+  `deploy/portainer/docker-compose.yml` and set `ANIM_SERVICE_URL=http://anim:8000` in the stack's variables. The
+  image is published by GitHub Actions as `ghcr.io/andycqos74/gleam-anim-service`.
+- **Resources:** the image is ~2 GB (the model weights are baked in at build time; nothing is downloaded when it
+  runs) and needs ~2 GB of memory. On CPU a photo takes about 5–30 s; models load in ~45 s after the container
+  starts. The service holds no data and needs no ports published: keep it on the stack's internal network.
+- **If it's missing or fails,** photos animate as one flat layer as before; the error is logged and the photo is
+  tried again (at most every 10 minutes) when the Animate panel is next opened. Photos animated before the
+  service was added get their layers the same way. `ANIM_SERVICE_TIMEOUT` (seconds, default 300) limits the wait.
 
 ## Before go-live (QoS theme)
 
@@ -265,6 +289,7 @@ docker run --rm -v <stack>_site-data:/data -v /backups:/backups alpine \
 | `ANTHROPIC_API_KEY` (or `ASSISTANT_API_KEY`) | Visitor chat assistant (Claude). Off unless set; each site then turns it on under **Admin → Chat assistant** |
 | `ASSISTANT_MODEL`, `ASSISTANT_EFFORT` | The assistant's model (default `claude-opus-5-5`) and effort: `low`, `medium` (default), `high`, `xhigh` or `max` |
 | `ANIMATE_MODEL`, `ANIMATE_EFFORT` | The model behind *Ask Claude* in the editor's **Animate this photo** panel (same API key; default `claude-opus-5-5`, effort `medium`) |
+| `ANIM_SERVICE_URL` | Optional: the anim processing service, e.g. `http://anim:8000`, for depth layers in animated photos (see *Animated photos*). Blank = one flat layer. `ANIM_SERVICE_TIMEOUT`: seconds to wait per photo (default 300) |
 | `ASSISTANT_MAX_MESSAGES` | Questions per conversation before the visitor is asked to start a new one (default 30) |
 | `UMAMI_URL`, `UMAMI_WEBSITE_ID` | Count visitors with an Umami server (address, and this site's website ID in Umami) |
 | `UMAMI_USERNAME`, `UMAMI_PASSWORD` or `UMAMI_API_KEY` | A view-only Umami login, so Admin → Visitors can show the figures |

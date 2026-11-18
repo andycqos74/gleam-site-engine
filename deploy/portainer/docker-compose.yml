@@ -42,6 +42,8 @@ services:
       ASSISTANT_EFFORT: ${ASSISTANT_EFFORT:-medium}
       ANIMATE_MODEL: ${ANIMATE_MODEL:-claude-opus-5-5}
       ANIMATE_EFFORT: ${ANIMATE_EFFORT:-medium}
+      # Depth layers for animated photos: uncomment the anim service below and set ANIM_SERVICE_URL=http://anim:8000.
+      ANIM_SERVICE_URL: ${ANIM_SERVICE_URL:-}
     volumes:
       - site-data:/data
       # A custom theme kept on the server instead of built into the image: uncomment, set THEME to its folder name,
@@ -50,6 +52,15 @@ services:
     # Not using a tunnel? Remove the cloudflared service and publish a port for your reverse proxy instead:
     # ports:
     #   - "127.0.0.1:8081:8080"
+
+  # Optional: processing service for animated photos. It separates photos into depth layers (the person cut out,
+  # the background filled in behind them) so people move against the background. Uncomment, set
+  # ANIM_SERVICE_URL=http://anim:8000 in the stack's variables, and redeploy. Needs ~2 GB of memory and a ~2 GB
+  # image (the model weights are inside it). It holds no data and publishes no ports. Several sites on one server
+  # can share one: give it a fixed container name and put the stacks on a shared network.
+  # anim:
+  #   image: ghcr.io/andycqos74/gleam-anim-service:${ANIM_TAG:-latest}
+  #   restart: unless-stopped
 
   cloudflared:
     image: cloudflare/cloudflared:${CLOUDFLARED_TAG:-latest}

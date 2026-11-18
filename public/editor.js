@@ -408,7 +408,7 @@
 
   async function animatePanel(src, alt) {
     let info;
-    toast('Looking at the photo…', { sticky: true });
+    toast('Looking at the photo… (the first time can take up to a minute)', { sticky: true });
     try {
       [info] = await Promise.all([api('POST', '/api/animations/panel', { src }), loadPlayer()]);
       document.querySelector('.ed-toast').hidden = true;
@@ -428,9 +428,13 @@
     const box = el('div', { className: 'ed-anim-box' });
     const stage = el('div', { className: 'ed-anim-stage' }, [player, box]);
 
-    const found = info.found.nodes || info.found.stars
+    const lights = info.found.nodes || info.found.stars
       ? `Found ${info.found.nodes} lights and ${info.found.stars} small points of light in this photo.`
       : 'No lights found in this photo: drift, parallax and particles suit it best.';
+    const depth = info.found.subjects
+      ? ' The subject has been cut out from the background, so parallax moves it against the background.'
+      : info.found.layers > 1 ? ` The photo has been separated into ${info.found.layers} depth layers for parallax.` : '';
+    const found = lights + depth;
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     const presetRow = el('div', { className: 'ed-chips' });

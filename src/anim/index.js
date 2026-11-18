@@ -4,6 +4,10 @@
 // photo appears (kit.js wraps it in <animated-image>). Animations are stored per photo address in the site's own
 // database; a theme can ship defaults for its own photos in theme.animations.
 //
+// With ANIM_SERVICE_URL set, the processing service (service.js, services/anim) also separates the photo into depth
+// layers, so the subject moves against the background; uploads are sent to it straight away. Without it, or if it
+// fails, the photo plays as one flat layer (and the service is tried again later).
+//
 // Claude only ever proposes: its settings load into the editor's preview, and nothing changes for visitors until an
 // editor presses "Save animation".
 
@@ -14,17 +18,21 @@ import Anthropic from '@anthropic-ai/sdk';
 import { now } from '../db.js';
 import { ValidationError } from '../content/store.js';
 import { detectLights } from './analyse.js';
+import { createLayerService } from './service.js';
 import { cleanConfig, MODEL_SCHEMA, PRESETS, EFFECT_TYPES, EFFECT_DEFAULTS, EFFECT_LABELS, PARTICLE_KINDS, suggestPreset } from './config.js';
 
 const MAX_PROMPT = 1000;
 const LAYER_DEPTH = 0.45; // single-layer photos: a little parallax for the photo, more for the lights in front of it
+const RETRY_MS = 10 * 60e3; // after the processing service fails for a photo, wait this long before trying again
 
 export const SYSTEM_PROMPT = `You set up subtle looping animations for still images on a website. The editor describes what they
 want; you return animation settings that follow the given JSON schema exactly.
 
 How the animation works: the still image is drawn on a canvas and effects play on top of it, in a seamless loop.
 - drift: the whole picture slowly zooms and pans.
-- parallax: the picture shifts slightly with the visitor's pointer (and sways gently on phones).
+- parallax: the picture shifts slightly with the visitor's pointer (and sways gently on phones). When the photo has
+  been separated into depth layers, nearer layers (the subject) shift more than the background, so the subject
+  moves against it.
 - twinkle: the small bright star-like points found in the image twinkle.
 - sparkle: the larger bright lights found in the image glow and flare.
 - pulses: dots of light travel from the brightest light (the hub) along straight lines to the other lights.
@@ -48,7 +56,10 @@ export function analysisSummary(a) {
     `Lights found: ${nodes.length} larger lights (nodes), ${a.lights?.stars?.length ?? 0} small star-like points.`,
     a.lights?.hub ? `Hub (brightest light): [${a.lights.hub.join(', ')}].` : 'No hub.',
     nodes.length ? `Top nodes as [x, y, area]: ${JSON.stringify(nodes.slice(0, 20))}.` : '',
-    `Layers: ${a.layers?.length ?? 1} (the photo is one flat layer; there is no cut-out of people or objects).`,
+    (a.layers?.length ?? 1) > 1
+      ? `Layers: ${a.layers.length}, far to near, with depths ${a.layers.map((l) => l.depth).join(', ')} (the photo is separated by depth; nearer layers move more with parallax).`
+      : 'Layers: 1 (the photo is one flat layer; there is no cut-out of people or objects).',
+    a.subjects?.length ? `Subjects cut out as [x, y, width, height]: ${a.subjects.map((s) => `${s.label} ${JSON.stringify(s.bbox)} on layer ${s.layer}`).join('; ')}.` : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -91,6 +102,12 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
   const call = config.animateCall ?? claudeAnimator(config);
   const hasKey = !!config.assistantApiKey || !!config.animateCall;
   const themeDefaults = theme.animations ?? {};
+  // Optional depth layers from the processing service. animLayerService lets tests and other set-ups supply their own.
+  const layerService = config.animLayerService ?? (config.animServiceUrl
+    ? createLayerService({ url: config.animServiceUrl, mediaDir, timeoutMs: (config.animServiceTimeout || 300) * 1000, pollMs: config.animServicePollMs })
+    : null);
+  const failedAt = new Map(); // src -> when the service last failed for it
+  const inflight = new Map(); // src -> the analysis in progress, so an upload and the editor never process twice
 
   // The file behind a photo address, or null if it isn't one we can analyse.
   function fileFor(src) {
@@ -109,8 +126,8 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
   function buildIndex() {
     index = new Map();
     for (const [src, d] of Object.entries(themeDefaults)) index.set(src, { url: d.analysis, config: d.config });
-    for (const r of db.prepare('SELECT id, src, config FROM animations').all()) {
-      if (r.config) index.set(r.src, { url: `/_anim/${r.id}.json`, config: JSON.parse(r.config) });
+    for (const r of db.prepare('SELECT id, src, analysis, config FROM animations').all()) {
+      if (r.config) index.set(r.src, { url: analysisUrl(r.id, JSON.parse(r.analysis)), config: JSON.parse(r.config) });
       else index.delete(r.src); // removed by an editor, theme default included
     }
   }
@@ -118,23 +135,63 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
 
   const row = (src) => db.prepare('SELECT * FROM animations WHERE src = ?').get(src);
 
-  // Analyses the photo the first time it's needed and keeps the result.
-  async function analyse(src) {
-    const file = fileFor(src);
-    if (!file) throw new ValidationError('Only photos uploaded to this site or included with its design can be animated.');
-    let r = row(src);
-    if (!r) {
-      if (!fs.existsSync(file)) throw new ValidationError('That photo could not be found.');
+  // The player caches analysis files for a day; a new set of layers gets a new address.
+  const analysisUrl = (id, a) => `/_anim/${id}.json${a.layered ? `?v=${String(a.layered).slice(0, 12)}` : ''}`;
+
+  const wantsLayers = (a, src) => !!layerService && !a.layered && Date.now() - (failedAt.get(src) ?? 0) > RETRY_MS;
+
+  // Lights (here, in Node) and depth layers (from the processing service, if there is one), stored per photo.
+  async function build(src, file, existing) {
+    let analysis = existing && JSON.parse(existing.analysis);
+    if (!analysis) {
       const a = await detectLights(file);
-      const analysis = { version: 1, width: a.width, height: a.height, brightness: a.brightness, layers: [{ src, depth: LAYER_DEPTH }], lights: a.lights };
+      analysis = { version: 1, width: a.width, height: a.height, brightness: a.brightness, layers: [{ src, depth: LAYER_DEPTH }], lights: a.lights };
+    }
+    if (wantsLayers(analysis, src)) {
+      try {
+        const L = await layerService.layers(file);
+        // The service may have analysed the photo at another size: subjects are kept in the analysis's pixels.
+        const sx = analysis.width / L.width; const sy = analysis.height / L.height;
+        analysis.layers = L.layers.length > 1 ? L.layers : [{ src, depth: LAYER_DEPTH }];
+        analysis.subjects = L.subjects.map((s) => ({ ...s, bbox: [s.bbox[0] * sx, s.bbox[1] * sy, s.bbox[2] * sx, s.bbox[3] * sy].map(Math.round) }));
+        analysis.layered = L.id;
+        failedAt.delete(src);
+      } catch (e) {
+        failedAt.set(src, Date.now());
+        console.error(`Animated photo ${src}: ${e.message}. It plays as one layer for now.`);
+      }
+    }
+    if (existing) {
+      db.prepare('UPDATE animations SET analysis = ? WHERE src = ?').run(JSON.stringify(analysis), src);
+    } else {
       // A theme default (if any) keeps playing until an editor saves something else.
       const d = themeDefaults[src];
       db.prepare('INSERT OR IGNORE INTO animations (src, analysis, config, updated_at) VALUES (?, ?, ?, ?)')
         .run(src, JSON.stringify(analysis), d ? JSON.stringify(d.config) : null, now());
+    }
+    buildIndex();
+  }
+
+  // Analyses the photo the first time it's needed and keeps the result. A photo analysed while the processing
+  // service was missing or failing gets its layers the next time it's opened.
+  async function analyse(src) {
+    const file = fileFor(src);
+    if (!file) throw new ValidationError('Only photos uploaded to this site or included with its design can be animated.');
+    let r = row(src);
+    if (!r || wantsLayers(JSON.parse(r.analysis), src)) {
+      if (!r && !fs.existsSync(file)) throw new ValidationError('That photo could not be found.');
+      if (!inflight.has(src)) inflight.set(src, build(src, file, r).finally(() => inflight.delete(src)));
+      await inflight.get(src);
       r = row(src);
-      buildIndex();
     }
     return { id: r.id, analysis: JSON.parse(r.analysis), config: r.config ? JSON.parse(r.config) : null };
+  }
+
+  // Starts the analysis of a newly uploaded photo in the background when the processing service is set up, so the
+  // layers are usually ready by the time an editor opens the Animate panel.
+  function prepare(src) {
+    if (!layerService || !fileFor(src)) return;
+    analyse(src).catch((e) => console.error(`Animated photo ${src}: ${e.message}`));
   }
 
   // What the editor's Animate panel needs.
@@ -143,10 +200,14 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
     const start = suggestPreset(analysis);
     return {
       src,
-      analysisUrl: `/_anim/${id}.json`,
+      analysisUrl: analysisUrl(id, analysis),
       width: analysis.width,
       height: analysis.height,
-      found: { nodes: analysis.lights.nodes.length, stars: analysis.lights.stars.length, hub: !!analysis.lights.hub },
+      found: {
+        nodes: analysis.lights.nodes.length, stars: analysis.lights.stars.length, hub: !!analysis.lights.hub,
+        layers: analysis.layers.length, subjects: analysis.subjects?.length ?? 0,
+      },
+      layering: !!layerService,
       config: saved,
       saved: !!saved,
       suggested: start,
@@ -171,7 +232,7 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
     const r = db.prepare('SELECT analysis FROM animations WHERE id = ?').get(id);
     if (!r) return null;
     const a = JSON.parse(r.analysis);
-    return { version: 1, width: a.width, height: a.height, layers: a.layers, lights: a.lights };
+    return { version: 1, width: a.width, height: a.height, layers: a.layers, lights: a.lights, ...(a.subjects ? { subjects: a.subjects } : {}) };
   }
 
   // Asks Claude for settings from the editor's description. Returns { config, note, needsReview } for review in the
@@ -216,7 +277,7 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
     return { config: { ...clean, effects: usable }, note, needsReview: !!out.needsReview || usable.some((e) => e.type === 'particles') };
   }
 
-  return { lookup, analyse, panel, save, suggest, analysisFile, hasKey, fileFor };
+  return { lookup, analyse, prepare, panel, save, suggest, analysisFile, hasKey, fileFor };
 }
 
 const round2 = (n) => Math.round(n * 100) / 100;
