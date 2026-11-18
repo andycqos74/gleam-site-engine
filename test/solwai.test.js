@@ -41,6 +41,20 @@ async function editor() {
   return { c, json };
 }
 
+test('the home page hero photo is an animated image; the player and its light map are served', async () => {
+  const page = await (await fetch(`${base}/`)).text();
+  assert.match(page, /<animated-image class="hero-photo" src="\/img\/anim\/hero-solway\.json" config="\{&quot;version&quot;:1/);
+  assert.match(page, /<script src="\/_engine\/animated-image\.js\?v=[^"]+" defer>/);
+  assert.match(page, /<animated-image[^>]*controls><img src="\/img\/hero-solway\.jpg"/);
+  const analysis = await (await fetch(`${base}/img/anim/hero-solway.json`)).json();
+  assert.deepEqual([analysis.width, analysis.height, analysis.layers[0].src], [1920, 1080, '../hero-solway.jpg']);
+  assert.equal((await fetch(`${base}/_engine/animated-image.js`)).status, 200);
+  assert.doesNotMatch(await (await fetch(`${base}/drum`)).text(), /animated-image/);
+
+  const { c } = await editor();
+  assert.doesNotMatch(await (await c('/')).text(), /<animated-image/);
+});
+
 test('every SolwAI page renders without editor markup', async () => {
   for (const p of PAGES) {
     const res = await fetch(base + p);

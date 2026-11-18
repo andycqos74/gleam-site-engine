@@ -365,6 +365,15 @@ Copy `themes/starter` to `themes/<your-name>` and edit. A theme is a folder with
   to pick from the photo library go in `public/img/`. Style `.ph` (an empty photo slot) and `.pill` (highlighted
   headline words); the editing tools style themselves.
 
+- **Animated images:** the engine's `<animated-image>` player (`/_engine/animated-image.js`, plain JS, ~9 KB
+  minified) plays a still photo as a subtle seamless loop: drift, parallax, twinkling lights, sparkles, pulses
+  along lines and particles in a region, drawn live on a canvas (no video). Wrap the photo's `<img>` (it stays as
+  the fallback) and point `src` at an analysis file made by `detectLights()` in `src/anim/analyse.js`:
+  `<animated-image src="/img/anim/x.json" config='{"effects":[…]}' position="65% 50%" controls>`. It stays still
+  for visitors who ask for reduced motion, pauses off-screen and adds a pause button with `controls`. The SolwAI
+  home page hero is the example (`themes/solwai/pages/home.js`); the design is in
+  [docs/animated-images](docs/animated-images/HANDOVER.md).
+
 Run `npm test`, then `THEME=<your-name> npm run dev` to try it. The engine checks the manifest at start-up and
 explains anything missing.
 
