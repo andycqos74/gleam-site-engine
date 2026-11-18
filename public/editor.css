@@ -240,3 +240,25 @@ body:has(.ed-drawer) .admin-bar { display: none; }
 .photo-pick-row .btn { align-self: center; }
 .photo-pick.is-logo .photo-pick-preview { width: 120px; border-radius: 12px; background: #fff; }
 .photo-pick.is-logo .photo-pick-preview img { object-fit: contain; padding: 6px; }
+
+/* Animate this photo (editor.js animatePanel) */
+.ed-anim-modal { width: min(1100px, 100%); max-height: 92vh; }
+.ed-anim-body { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 1fr); gap: 20px; padding: 20px; overflow: auto; }
+@media (max-width: 760px) { .ed-anim-body { grid-template-columns: 1fr; } }
+.ed-anim-stage { position: relative; border-radius: 14px; overflow: hidden; background: #000; touch-action: none; }
+.ed-anim-stage.is-drawing { cursor: crosshair; outline: 3px dashed var(--ed-warn); }
+.ed-anim-player { width: 100%; max-height: 60vh; }
+.ed-anim-box { display: none; position: absolute; border: 2px dashed #fff; background: rgba(242, 107, 58, .25); pointer-events: none; }
+.ed-anim-controls { display: flex; flex-direction: column; gap: 14px; color: var(--ed-text); }
+.ed-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.ed-chip { background: #fff; color: var(--ed-ink); border: 2px solid var(--ed-ink); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.ed-chip[aria-pressed="true"] { background: var(--ed-ink); color: #fff; }
+.ed-range input { width: 100%; accent-color: var(--ed-accent); padding: 0; border: 0; }
+.ed-range output { font-weight: 400; color: var(--ed-muted); }
+.ed-anim-ai textarea { font: inherit; font-size: 15px; padding: 10px 12px; border: 2px solid var(--ed-ink); border-radius: 12px; width: 100%; }
+.ed-anim-ai .ed-btn { align-self: flex-start; }
+.ed-anim-note { background: var(--ed-soft); border-radius: 12px; padding: 10px 12px; font-size: 14px; }
+.ed-anim-note.is-warn { background: #fde4d8; }
+.ed-btn-sm { padding: 4px 10px; font-size: 12px; margin-left: 4px; }
+.ed-anim-particles:empty { display: none; }
+.ed-anim-particles { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 2px solid var(--ed-soft); border-radius: 12px; }

@@ -31,5 +31,24 @@ export default {
   scripts: ['/js/solwai.js'],
   favicon: '/img/solwai-mark.svg',
   shareImage: '/img/hero-solway.jpg',
+  // The home page hero's network map plays as a live animation (see the engine's src/anim): the cities sparkle
+  // and flare, pulses run out from the hub, stars twinkle and the map drifts with a little parallax. The light
+  // positions in img/anim/hero-solway.json were found automatically. Editors can change or remove it with the
+  // photo's "Animate" option; a replacement photo starts still.
+  animations: {
+    '/img/hero-solway.jpg': {
+      analysis: '/img/anim/hero-solway.json',
+      config: {
+        version: 1, loopSeconds: 8, speed: 0.8, intensity: 0.6, pauseButton: true,
+        effects: [
+          { type: 'drift', zoom: 0.02, panX: 14, panY: 8 },
+          { type: 'parallax', strength: 1, pointer: true, autoSway: true },
+          { type: 'twinkle', source: 'stars', density: 0.5, depth: 0.7 },
+          { type: 'sparkle', source: 'nodes', flare: true, depth: 1 },
+          { type: 'pulses', from: 'hub', to: 'nodes', minArea: 40, depth: 1 },
+        ],
+      },
+    },
+  },
   adminLogo: '/img/solwai-mark.svg',
 };

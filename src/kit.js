@@ -62,10 +62,16 @@ export function createKit(ctx) {
     return html`<a${attrs({ href: url || '#', class: cls, rel: external ? 'noopener' : null, 'data-k': ed && key, 'data-type': ed && 'text', 'data-link-k': ed && `${key}.url`, ...extra })}>${value(key)}</a>`;
   }
 
+  // A photo with an animation (src/anim) plays inside <animated-image>, which takes the photo's class so the theme's
+  // layout still applies; the <img> stays inside as the still fallback. Never while editing.
   function img({ src, alt, cls, sizes, edAttrs, label }) {
     if (src) {
       const set = srcset(src);
-      return html`<img${attrs({ src, srcset: set, sizes: set ? (sizes ?? '(max-width: 900px) 100vw, 50vw') : null, alt: alt ?? '', class: cls, loading: 'lazy', decoding: 'async', ...edAttrs })}>`;
+      const anim = ctx.animation?.(src);
+      const still = html`<img${attrs({ src, srcset: set, sizes: set ? (sizes ?? '(max-width: 900px) 100vw, 50vw') : null, alt: alt ?? '', class: anim ? null : cls, loading: 'lazy', decoding: 'async', ...edAttrs })}>`;
+      if (!anim) return still;
+      ctx.usesAnimation = true;
+      return html`<animated-image${attrs({ class: cls, src: anim.url, config: JSON.stringify(anim.config), controls: anim.config.pauseButton !== false })}>${still}</animated-image>`;
     }
     return html`<div${attrs({ class: `ph ${cls ?? ''}`, role: ed ? null : 'presentation', ...edAttrs })}>${ed ? html`<span class="ph-label">Add photo${label ? `: ${label}` : ''}</span>` : ''}</div>`;
   }
