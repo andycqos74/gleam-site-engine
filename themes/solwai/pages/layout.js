@@ -4,14 +4,12 @@ import { logo } from '../marks.js';
 
 const HOME_NAV = [['AI services', '#ai-services'], ['Apps', '#apps'], ['Why now', '#why-now'], ['How we work', '#how'], ['Services', '#services']];
 
-// Extra <head> content: preload the fonts the first screen uses, switch on the entrance animations early, and on
-// the home page load the animated hero photo's player.
+// Extra <head> content: preload the fonts the first screen uses, and switch on the entrance animations early.
 export function head(k, { page, version }) {
   const heading = page === 'home' ? '/fonts/C64Keyboard-Regular.otf' : '/fonts/red-hat-display-latin-700-normal.woff2';
   return html`<link rel="preload" href="/fonts/figtree-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="${heading}" as="font" type="${heading.endsWith('.otf') ? 'font/otf' : 'font/woff2'}" crossorigin>
-<script src="/js/anim-init.js?v=${version}"></script>
-${page === 'home' ? html`<script src="/_engine/animated-image.js?v=${version}" defer></script>` : ''}`;
+<script src="/js/anim-init.js?v=${version}"></script>`;
 }
 
 // Everything inside <body>. The home page's nav jumps to its sections; every other page lists the six apps.

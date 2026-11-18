@@ -47,7 +47,9 @@
 
     connectedCallback() {
       this.mx = this.my = 0; this.tx = this.ty = null; this.clock = 0; this.visible = false; this.paused = false;
-      const pos = (this.getAttribute('position') || '50% 50%').split(/\s+/).map((s) => clamp(parseFloat(s) / 100, 0, 1));
+      // Focal point: the position attribute, else the object-position the page's CSS gives this element.
+      const pos = (this.getAttribute('position') || getComputedStyle(this).objectPosition || '50% 50%').split(/\s+/)
+        .map((s) => (s.endsWith('%') ? clamp(parseFloat(s) / 100, 0, 1) : 0.5));
       this.fx = pos[0] ?? 0.5; this.fy = pos[1] ?? pos[0] ?? 0.5;
       const img = this.querySelector('img');
       if (img) img.style.objectPosition = `${this.fx * 100}% ${this.fy * 100}%`;
