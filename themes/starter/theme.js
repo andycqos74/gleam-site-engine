@@ -2,7 +2,7 @@
 // The manifest below is everything the engine needs; see README "Writing a theme".
 
 import { FIELDS, COLLECTIONS, SEED, CONTACT_TOPICS } from './content.js';
-import { layout, home, about, posts, post, contact, notFound } from './pages.js';
+import { layout, home, about, posts, post, contact, notFound, staticPage } from './pages.js';
 
 COLLECTIONS.posts.itemPage = {
   base: '/posts',
@@ -29,6 +29,7 @@ export default {
   },
   layout,
   notFound,
+  staticPage,
   contact: { path: '/contact', topics: CONTACT_TOPICS },
 
   stylesheets: ['/css/starter.css'],

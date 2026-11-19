@@ -59,3 +59,11 @@ ${body}
 export function notFound() {
   return html`<section class="hero hero-center"><h1 class="h-hero h-80">Page not <span class="pill pill-gold pill-a">found</span></h1><p class="lede">That page has moved or never existed.</p><div class="btn-row"><a class="btn btn-navy" href="/">Go to the homepage</a></div></section>`;
 }
+
+// Pages from Admin > Pages, in the same style as the privacy page. content is already cleaned HTML.
+export function staticPage(k, { title, content, hasHeading }) {
+  return html`<section class="hero hero-left prose-page static-page">
+  ${hasHeading ? '' : html`<h1 class="h-hero h-72">${title}</h1>`}
+  <div class="prose">${content}</div>
+</section>`;
+}

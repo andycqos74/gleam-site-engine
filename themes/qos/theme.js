@@ -3,7 +3,7 @@
 
 import { FIELDS, SEED, CONTENT_UPDATES } from './content.js';
 import { COLLECTIONS, COLOURS, CONTACT_TOPICS } from './collections.js';
-import { layout, head, notFound } from './pages/layout.js';
+import { layout, head, notFound, staticPage } from './pages/layout.js';
 import { home } from './pages/home.js';
 import { about } from './pages/about.js';
 import { programmes } from './pages/programmes.js';
@@ -48,6 +48,7 @@ export default {
   layout,
   head,
   notFound,
+  staticPage,
   contact: { path: '/contact', topics: CONTACT_TOPICS },
 
   // Assets, served from this theme's public/ folder at the site root
