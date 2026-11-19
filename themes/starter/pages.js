@@ -109,3 +109,8 @@ export function contact(k, { form = {}, errors = {}, sent = false, topic } = {})
 export function notFound() {
   return html`<section class="block narrow"><h1>Page not found</h1><p><a class="button" href="/">Go home</a></p></section>`;
 }
+
+// Pages from Admin > Pages (terms, privacy notices, …). content is already cleaned HTML.
+export function staticPage(k, { title, content, hasHeading }) {
+  return html`<section class="block narrow static-page">${hasHeading ? '' : html`<h1>${title}</h1>`}${content}</section>`;
+}

@@ -3,7 +3,7 @@
 
 import { FIELDS, COLLECTIONS, SEED, CONTACT_TOPICS } from './content.js';
 import { APPS } from './apps.js';
-import { layout, head, notFound } from './pages/layout.js';
+import { layout, head, notFound, staticPage } from './pages/layout.js';
 import { home } from './pages/home.js';
 import { appPage } from './pages/app.js';
 
@@ -24,6 +24,7 @@ export default {
   layout,
   head,
   notFound,
+  staticPage,
   // The contact form is in the home page's contact panel; messages go to Admin > Messages.
   contact: { path: '/', topics: CONTACT_TOPICS },
 

@@ -49,3 +49,11 @@ export function notFound() {
   </div>
 </div></div></section>`;
 }
+
+// Pages from Admin > Pages (terms, privacy notices, …). content is already cleaned HTML.
+export function staticPage(k, { title, content, hasHeading }) {
+  return html`<section class="static-page"><div class="wrap static-page-in">
+  ${hasHeading ? '' : html`<h1>${title}</h1>`}
+  ${content}
+</div></section>`;
+}
