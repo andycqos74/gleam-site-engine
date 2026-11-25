@@ -184,3 +184,40 @@ test('unpublished pages are hidden from visitors; edits, deletes and Put back ar
   assert.equal((await post(`/admin/history/${deleted}/restore`, {})).status, 200);
   assert.match(await (await fetch(`${base}/privacy`)).text(), /Version three/, 'put back');
 });
+
+test('a deleted page\'s id is never reused, so Put back on its old changes can\'t overwrite a newer page', async () => {
+  const { c, send, post } = await signIn();
+  const id = idOf(await send('/admin/pages', { title: 'Cookies', slug: 'cookies', layout: 'site', published: '1', html: '<p>Cookies one</p>' }));
+  await send(`/admin/pages/${id}`, { title: 'Cookies', slug: 'cookies', layout: 'site', published: '1', html: '<p>Cookies two</p>' });
+  assert.equal((await post(`/admin/pages/${id}/delete`, {})).status, 303);
+  const newer = idOf(await send('/admin/pages', { title: 'Refunds', slug: 'refunds', layout: 'site', published: '1', html: '<p>Refund policy</p>' }));
+  assert.notEqual(newer, id);
+
+  // Putting back the deletion brings the page back under its old id, so its earlier changes still apply to it.
+  const revs = await (await c('/admin/history')).text();
+  const deleted = /Deleted Page &quot;Cookies&quot;[\s\S]*?\/admin\/history\/(\d+)\/restore/.exec(revs)[1];
+  assert.equal((await post(`/admin/history/${deleted}/restore`, {})).status, 200);
+  assert.equal((await c(`/admin/pages/${id}`)).status, 200);
+  const changed = /Changed Page &quot;Cookies&quot;[\s\S]*?\/admin\/history\/(\d+)\/restore/.exec(await (await c('/admin/history')).text())[1];
+  assert.equal((await post(`/admin/history/${changed}/restore`, {})).status, 200);
+  assert.match(await (await fetch(`${base}/cookies`)).text(), /Cookies one/);
+  assert.match(await (await fetch(`${base}/refunds`)).text(), /Refund policy/, 'the newer page is untouched');
+});
+
+test('editors don\'t see or put back changes to static pages', async () => {
+  const { c, send, post } = await signIn();
+  const id = idOf(await send('/admin/pages', { title: 'Accessibility', slug: 'accessibility', layout: 'site', published: '1', html: '<p>Statement</p>' }));
+  assert.equal((await post(`/admin/pages/${id}/delete`, {})).status, 303);
+  const rev = /Deleted Page &quot;Accessibility&quot;[\s\S]*?\/admin\/history\/(\d+)\/restore/.exec(await (await c('/admin/history')).text())[1];
+
+  const created = await (await post('/admin/users', { name: 'Pat', email: 'pat@example.com', role: 'editor' })).text();
+  const temp = /<code>([A-Za-z0-9]{14})<\/code>/.exec(created)[1];
+  const ed = client();
+  await ed('/admin/login', form({ email: 'pat@example.com', password: temp }));
+  const csrf = /name="_csrf" value="([^"]+)"/.exec(await (await ed('/admin/account')).text())[1];
+  await ed('/admin/account', form({ _csrf: csrf, current: temp, password: 'EditorPass123', confirm: 'EditorPass123' }));
+
+  assert.doesNotMatch(await (await ed('/admin/history')).text(), /Accessibility/);
+  assert.equal((await ed(`/admin/history/${rev}/restore`, form({ _csrf: csrf }))).status, 403);
+  assert.equal((await fetch(`${base}/accessibility`)).status, 404, 'still deleted');
+});

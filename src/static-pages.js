@@ -144,11 +144,18 @@ export function createStaticPages(db, { theme }) {
     return { data, errors };
   }
 
-  const create = db.transaction((data, userId) => {
+  // A page's id is never used again once it's been deleted, because the change history refers to pages by id: a new
+  // page that took a deleted page's id would be overwritten by "Put back" on one of the old page's changes.
+  const nextId = () => 1 + Math.max(
+    db.prepare('SELECT COALESCE(MAX(id), 0) AS n FROM pages').get().n,
+    db.prepare('SELECT COALESCE(MAX(CAST(substr(ref, 6) AS INTEGER)), 0) AS n FROM revisions WHERE kind = \'page\'').get().n,
+  );
+
+  // `id` is only given when "Put back" brings a deleted page back under its old id.
+  const create = db.transaction((data, userId, id = nextId()) => {
     const at = now();
-    const { lastInsertRowid } = db.prepare('INSERT INTO pages (slug, title, description, html, layout, published, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(data.slug, data.title, data.description ?? '', data.html, data.layout, data.published ? 1 : 0, at, at, userId ?? null);
-    const id = Number(lastInsertRowid);
+    db.prepare('INSERT INTO pages (id, slug, title, description, html, layout, published, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, data.slug, data.title, data.description ?? '', data.html, data.layout, data.published ? 1 : 0, at, at, userId ?? null);
     revision(userId, id, 'create', null, snapshot(data));
     return id;
   });
@@ -179,7 +186,8 @@ export function createStaticPages(db, { theme }) {
     if (r.action === 'delete') {
       const problem = slugProblem(before.slug);
       if (problem) throw new ValidationError(`The page can't come back at /${before.slug}: ${problem}`);
-      create(before, userId);
+      if (get(id)) throw new ValidationError('That page is already back.');
+      create(before, userId, id);
     } else if (!get(id)) {
       throw new ValidationError('That page has since been deleted. Put back its deletion first.');
     } else if (r.action === 'create') {

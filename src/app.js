@@ -434,15 +434,22 @@ export function createApp(config) {
     res.redirect(303, messagesUrl(req.body.show));
   });
 
-  adminRouter.get('/history', (req, res) => sendHtml(res, admin.historyPage(adminCtx(req), { revisions: store.revisions() })));
+  // Changes to static pages and business cards are only shown to, and put back by, administrators, like the screens
+  // that make them.
+  const ADMIN_KINDS = new Set(['page', 'card']);
+  const historyFor = (req) => store.revisions().filter((r) => req.user.role === 'admin' || !ADMIN_KINDS.has(r.kind));
+  adminRouter.get('/history', (req, res) => sendHtml(res, admin.historyPage(adminCtx(req), { revisions: historyFor(req) })));
   adminRouter.post('/history/:id/restore', (req, res) => {
+    const id = Number(req.params.id);
+    if (req.user.role !== 'admin' && ADMIN_KINDS.has(db.prepare('SELECT kind FROM revisions WHERE id = ?').get(id)?.kind)) {
+      return res.status(403).send('Administrators only.');
+    }
     try {
-      const id = Number(req.params.id);
       if (!cards.restore(id, req.user.id) && !pages.restore(id, req.user.id)) store.restore(id, req.user.id);
-      sendHtml(res, admin.historyPage(adminCtx(req, 'Done: the earlier version is back.'), { revisions: store.revisions() }));
+      sendHtml(res, admin.historyPage(adminCtx(req, 'Done: the earlier version is back.'), { revisions: historyFor(req) }));
     } catch (e) {
       if (!(e instanceof ValidationError)) throw e;
-      sendHtml(res.status(400), admin.historyPage(adminCtx(req, e.message), { revisions: store.revisions() }));
+      sendHtml(res.status(400), admin.historyPage(adminCtx(req, e.message), { revisions: historyFor(req) }));
     }
   });
 
