@@ -15,9 +15,10 @@ import { renderDocument } from './document.js';
 import { createAnalytics, RANGES, DEFAULT_RANGE, AnalyticsError } from './analytics.js';
 import { createCards, cleanCard, cleanSettings as cleanCardSettings, vcard, vcardFileName, qrSvg, qrPng } from './cards.js';
 import { cardPage, retiredCardPage } from './card-page.js';
+import { createStaticPages, hasHeading, MAX_HTML } from './static-pages.js';
 import { loadTheme, ROOT } from './theme.js';
 import * as admin from './admin-pages.js';
-import { html } from './html.js';
+import { html, raw } from './html.js';
 
 const VERSION = Date.now().toString(36);
 const EDIT_COOKIE = 'site_edit';
@@ -48,6 +49,7 @@ export function createApp(config) {
   const animations = createAnimations({ db, theme, mediaDir, config });
   const analytics = createAnalytics(config, { timeZone: theme.timeZone });
   const cards = createCards(db, { mediaDir, publicDir: theme.publicDir, siteName, theme, baseUrl: config.baseUrl });
+  const pages = createStaticPages(db, { theme });
   auth.ensureAdmin();
   auth.pruneSessions();
 
@@ -327,7 +329,8 @@ export function createApp(config) {
   app.get('/sitemap.xml', (req, res) => {
     const base = config.baseUrl || `${req.protocol}://${req.get('host')}`;
     const k = createKit({ theme, editing: false, fields: store.fields(), items: (c) => store.items(c), scheduled: store.scheduled });
-    const urls = [...Object.keys(theme.pages), ...itemPages.flatMap(([name]) => store.items(name).map(k.itemUrl))];
+    const urls = [...Object.keys(theme.pages), ...itemPages.flatMap(([name]) => store.items(name).map(k.itemUrl)),
+      ...pages.list().filter((p) => p.published).map((p) => `/${p.slug}`)];
     res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((p) => `  <url><loc>${base}${p}</loc></url>`).join('\n')}\n</urlset>\n`);
   });
 
@@ -346,6 +349,43 @@ export function createApp(config) {
     const result = auth.login(req, res, email, password);
     if (result.error) return sendHtml(res.status(401), admin.loginPage(adminCtx(req), { error: result.error, email, next }));
     res.redirect(303, result.user.must_change ? '/admin/account' : safeNext(next));
+  });
+
+  // Static HTML pages (src/static-pages.js): administrators only. The form is multipart (it can carry an .html
+  // file), so it's read before the usual sign-in and CSRF checks, which need its _csrf field; only administrators'
+  // uploads are read at all.
+  const pageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_HTML, files: 1, fieldSize: MAX_HTML + 1024, fields: 20 } }).single('file');
+  const pageForm = [
+    (req, res, next) => (req.user ? next() : auth.requireUser(req, res, next)),
+    auth.requireAdmin,
+    (req, res, next) => (req.user.mustChange ? res.redirect(303, '/admin/account') : next()),
+    (req, res, next) => pageUpload(req, res, (err) => {
+      if (err) req.uploadError = ['LIMIT_FILE_SIZE', 'LIMIT_FIELD_VALUE'].includes(err.code) ? 'That HTML is too large (1 MB at most).' : 'The upload didn\'t work. Please try again.';
+      req.body ??= {};
+      next();
+    }),
+    auth.requireUser,
+  ];
+  const PAGE_FLASH = { created: 'Page created.', saved: 'Saved.', deleted: 'Page deleted. It can be put back from the change history.' };
+  const pageById = (req) => (/^\d+$/.test(req.params.id) ? pages.get(Number(req.params.id)) : null);
+  const pageEditor = (req, res, { page, data, errors = {}, status = 200 }) => sendHtml(res.status(status), admin.pageEditPage(adminCtx(req, PAGE_FLASH[req.query.done]), {
+    page, data, errors, base: siteBase(req),
+  }));
+  const savePage = (req, res, page) => {
+    const { data, errors } = pages.clean(req.body, req.file, { id: page?.id, existing: page });
+    if (req.uploadError) errors.file = req.uploadError;
+    if (Object.keys(errors).length) return pageEditor(req, res, { page, data, errors, status: 400 });
+    if (page) {
+      pages.update(page.id, data, req.user.id);
+      return res.redirect(303, `/admin/pages/${page.id}?done=saved`);
+    }
+    res.redirect(303, `/admin/pages/${pages.create(data, req.user.id)}?done=created`);
+  };
+  app.post('/admin/pages', ...pageForm, (req, res) => savePage(req, res, null));
+  app.post('/admin/pages/:id', ...pageForm, (req, res, next) => {
+    const page = pageById(req);
+    if (!page) return next();
+    savePage(req, res, page);
   });
 
   const adminRouter = express.Router();
@@ -409,7 +449,8 @@ export function createApp(config) {
   adminRouter.get('/history', (req, res) => sendHtml(res, admin.historyPage(adminCtx(req), { revisions: store.revisions() })));
   adminRouter.post('/history/:id/restore', (req, res) => {
     try {
-      if (!cards.restore(Number(req.params.id), req.user.id)) store.restore(Number(req.params.id), req.user.id);
+      const id = Number(req.params.id);
+      if (!cards.restore(id, req.user.id) && !pages.restore(id, req.user.id)) store.restore(id, req.user.id);
       sendHtml(res, admin.historyPage(adminCtx(req, 'Done: the earlier version is back.'), { revisions: store.revisions() }));
     } catch (e) {
       if (!(e instanceof ValidationError)) throw e;
@@ -550,6 +591,25 @@ export function createApp(config) {
     res.redirect(303, '/admin/cards');
   });
 
+  adminRouter.get('/pages', auth.requireAdmin, (req, res) => sendHtml(res, admin.pagesPage(adminCtx(req, PAGE_FLASH[req.query.done]), { pages: pages.list(), base: siteBase(req) })));
+  adminRouter.get('/pages/new', auth.requireAdmin, (req, res) => pageEditor(req, res, { page: null, data: { title: '', slug: '', description: '', layout: 'site', published: true, html: '' } }));
+  adminRouter.get('/pages/:id', auth.requireAdmin, (req, res, next) => {
+    const page = pageById(req);
+    if (!page) return next();
+    pageEditor(req, res, { page, data: page });
+  });
+  adminRouter.get('/pages/:id/download', auth.requireAdmin, (req, res, next) => {
+    const page = pageById(req);
+    if (!page) return next();
+    res.attachment(`${page.slug.replace(/\//g, '-')}.html`);
+    res.set('Cache-Control', 'no-store').type('html').send(page.layout === 'standalone' ? pages.standalone(page, theme.lang) : page.html);
+  });
+  adminRouter.post('/pages/:id/delete', auth.requireAdmin, (req, res) => {
+    const page = pageById(req);
+    if (page) pages.remove(page.id, req.user.id);
+    res.redirect(303, '/admin/pages?done=deleted');
+  });
+
   app.use('/admin', adminRouter);
 
   // ---------- editing API (used by public/js/editor.js) ----------
@@ -624,6 +684,32 @@ export function createApp(config) {
 
   app.use('/api', api);
 
+  // Static HTML pages (src/static-pages.js, Admin > Pages) at /<slug>. Theme pages, item pages and the theme's own
+  // files come first. Unpublished pages are only visible to signed-in users. A page shown exactly as its file is
+  // keeps the site's security headers, and scripts in it never run.
+  const staticCsp = csp.replace(/script-src [^;]*/, "script-src 'none'");
+  app.get('/{*rest}', (req, res, next) => {
+    const page = pages.bySlug(req.path.slice(1).replace(/\/$/, ''));
+    if (!page || (!page.published && !req.user)) return next();
+    if (req.path.endsWith('/')) return res.redirect(301, `/${page.slug}`);
+    if (page.layout === 'standalone') {
+      res.set({ 'Content-Security-Policy': staticCsp, 'Cache-Control': req.user ? 'private, no-store' : 'public, max-age=0, must-revalidate' });
+      return res.type('html').send(pages.standalone(page, theme.lang));
+    }
+    const ctx = context(req);
+    const k = createKit(ctx);
+    const content = pages.content(page);
+    const body = theme.staticPage
+      ? theme.staticPage(k, { title: page.title, content: raw(content), hasHeading: hasHeading(content) })
+      : html`<section class="static-page">${hasHeading(content) ? '' : html`<h1>${page.title}</h1>`}${raw(content)}</section>`;
+    send(req, res, ctx, k, {
+      page: 'static',
+      body,
+      meta: { title: `${page.title} | ${siteName()}`, description: page.description, bodyClass: 'static' },
+      editUrl: req.user?.role === 'admin' ? `/admin/pages/${page.id}` : null,
+    });
+  });
+
   // ---------- errors ----------
   app.use((req, res) => {
     res.status(404);
@@ -649,6 +735,7 @@ export function createApp(config) {
 
   app.locals.db = db;
   app.locals.store = store;
+  app.locals.pages = pages;
   app.locals.theme = theme;
   app.locals.analytics = analytics;
   app.locals.animations = animations;

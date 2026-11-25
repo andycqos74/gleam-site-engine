@@ -16,8 +16,9 @@ function pageSettingFields(theme, page) {
     .map(([key, f]) => [key, f.label ?? (key.endsWith('.title') ? 'Browser tab and search result title' : key.endsWith('.description') ? 'Search result description' : key)]);
 }
 
-// meta (optional) overrides the page's title, description, share image and type, e.g. for an item page.
-export function renderDocument(ctx, k, { page, body, meta = {} }) {
+// meta (optional) overrides the page's title, description, share image and type, e.g. for an item page. editUrl
+// (optional) is where "Edit this page" goes instead of in-place editing (null: no such button), e.g. Admin > Pages.
+export function renderDocument(ctx, k, { page, body, meta = {}, editUrl }) {
   const { theme } = ctx;
   const f = ctx.fields;
   const title = meta.title ?? f[`meta.${page}.title`] ?? f['site.name'] ?? theme.name;
@@ -58,7 +59,7 @@ ${ctx.tracker ? umamiScript(ctx.tracker) : ''}
 </head>
 <body${attrs({ class: [`page-${meta.bodyClass ?? page}`, ctx.editing && 'is-editing'].filter(Boolean).join(' ') })}>
 ${theme.layout(k, { page, body })}
-${ctx.user ? adminBar(ctx) : ''}
+${ctx.user ? adminBar(ctx, editUrl) : ''}
 ${editConfig ? html`<script type="application/json" id="edit-config">${safeJson(editConfig)}</script>
 <script src="/_engine/editor.js?v=${ctx.version}" defer></script>` : ''}
 ${theme.scripts.map((src) => html`<script src="${asset(ctx, src)}" defer></script>`)}
@@ -74,7 +75,7 @@ function umamiScript(t) {
   return html`<script defer${attrs({ src: t.src, 'data-website-id': t.websiteId, 'data-domains': t.domains, 'data-exclude-search': 'true', 'data-do-not-track': 'true' })}></script>`;
 }
 
-function adminBar(ctx) {
+function adminBar(ctx, editUrl) {
   return html`<div class="admin-bar" data-admin-bar>
   <span class="admin-who">Signed in as ${ctx.user.name}</span>
   ${ctx.editing
@@ -82,6 +83,7 @@ function adminBar(ctx) {
       <button type="button" class="ab-btn ab-save" data-ed-action="save" disabled>Save changes</button>
       <button type="button" class="ab-btn" data-ed-action="discard" disabled>Discard</button>
       <button type="button" class="ab-btn" data-ed-action="exit">Finish editing</button>`
+    : editUrl !== undefined ? (editUrl ? html`<a class="ab-btn ab-save" href="${editUrl}">Edit this page</a>` : '')
     : html`<form method="post" action="/admin/edit-mode" class="ab-inline"><input type="hidden" name="_csrf" value="${ctx.csrf}"><input type="hidden" name="on" value="1"><input type="hidden" name="next" value="${ctx.url}"><button class="ab-btn ab-save">Edit this page</button></form>`}
   <a class="ab-btn" href="/admin">Admin</a>
 </div>`;

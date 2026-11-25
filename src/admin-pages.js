@@ -3,6 +3,7 @@
 import { html, raw, attrs, paragraphs } from './html.js';
 import { RANGES } from './analytics.js';
 import { fullName, MAX_LINKS, DEFAULT_ACCENT } from './cards.js';
+import { LAYOUTS } from './static-pages.js';
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/London' }) : '');
 const csrfInput = (ctx) => html`<input type="hidden" name="_csrf" value="${ctx.csrf}">`;
@@ -27,7 +28,7 @@ ${ctx.logo ? html`<link rel="icon" href="${ctx.logo}">` : ''}
     <a href="/admin/messages">Messages</a>
     ${ctx.analytics ? html`<a href="/admin/visitors">Visitors</a>` : ''}
     <a href="/admin/history">Change history</a>
-    ${u.role === 'admin' ? html`<a href="/admin/cards">Business cards</a><a href="/admin/assistant">Chat assistant</a><a href="/admin/users">People</a>` : ''}
+    ${u.role === 'admin' ? html`<a href="/admin/pages">Pages</a><a href="/admin/cards">Business cards</a><a href="/admin/assistant">Chat assistant</a><a href="/admin/users">People</a>` : ''}
     <a href="/admin/account">My account</a>
     <form method="post" action="/admin/logout">${csrfInput(ctx)}<button class="link-btn">Sign out</button></form>
   </nav>` : ''}
@@ -78,6 +79,11 @@ export function dashboard(ctx, { unread }) {
     <h2>Chat assistant</h2>
     <p>The AI chat popup that answers visitors' questions about the site. Turn it on, name it, and write its instructions.</p>
     <a class="btn btn-outline" href="/admin/assistant">Chat assistant settings</a>
+  </div>` : ''}
+  ${ctx.user.role === 'admin' ? html`<div class="admin-card">
+    <h2>Pages</h2>
+    <p>Terms and conditions, privacy notices and other pages written elsewhere: upload an HTML file, or paste and edit the HTML here.</p>
+    <a class="btn btn-outline" href="/admin/pages">Pages</a>
   </div>` : ''}
   ${ctx.user.role === 'admin' ? html`<div class="admin-card">
     <h2>Business cards</h2>
@@ -133,6 +139,10 @@ function describe(theme, r) {
     const key = r.ref;
     const page = key.split('.')[0];
     return `${theme.fields[key]?.type === 'image' ? 'Photo' : 'Text'} "${key}" (${page})`;
+  }
+  if (r.kind === 'page') {
+    const d = r.after ?? r.before ?? {};
+    return `Page "${d.title}" (/${d.slug})`;
   }
   if (r.kind === 'card') {
     const d = r.after ?? r.before ?? {};
@@ -501,6 +511,69 @@ export function cardSettingsPage(ctx, { settings: s, errors, defaults, flash }) 
   <label>Address<textarea name="address" rows="3" maxlength="300">${s.address}</textarea>${fieldError(errors, 'address')}</label>
   <button class="btn btn-navy">Save</button>
 </form>
+<script src="/_engine/admin.js?v=${ctx.version}" defer></script>`,
+  });
+}
+
+// ---------- Static HTML pages (src/static-pages.js) ----------
+
+const bareBase = (base) => base.replace(/^https?:\/\//i, '');
+const size = (n) => (n < 1024 ? `${n} bytes` : `${Math.round(n / 1024)} KB`);
+
+export function pagesPage(ctx, { pages, base }) {
+  return adminLayout(ctx, {
+    title: 'Pages',
+    body: html`<h1 class="admin-h1">Pages</h1>
+<p>Pages such as terms and conditions, privacy notices and cookie policies, often written by someone else or saved from Word. Upload the <strong>.html</strong> file, or paste its HTML, and give the page an address on this site. Link to it from the footer or anywhere else with <strong>Edit this page</strong>.</p>
+<div class="row-actions"><a class="btn btn-navy" href="/admin/pages/new">New page</a></div>
+${pages.length ? html`<table class="admin-table">
+<thead><tr><th>Title</th><th>Address</th><th>Shown</th><th>Last changed</th><th></th></tr></thead>
+<tbody>
+${pages.map((p) => html`<tr${attrs({ class: p.published ? null : 'muted' })}>
+  <td><a href="/admin/pages/${p.id}"><strong>${p.title}</strong></a>${p.published ? '' : html` <span class="tag tag-sky">Not published</span>`}</td>
+  <td><a href="/${p.slug}" target="_blank" rel="noopener"><code>${bareBase(base)}/${p.slug}</code></a></td>
+  <td>${LAYOUTS[p.layout]}<br><span class="muted">${size(p.size)}</span></td>
+  <td>${when(p.updated_at)}</td>
+  <td><a class="btn btn-outline btn-xs" href="/admin/pages/${p.id}">Edit</a></td>
+</tr>`)}
+</tbody>
+</table>` : html`<p class="muted">No pages yet.</p>`}`,
+  });
+}
+
+export function pageEditPage(ctx, { page, data: d, errors, base }) {
+  const radio = (value) => html`<label class="admin-check"><input type="radio" name="layout" value="${value}"${d.layout === value ? raw(' checked') : ''}> ${LAYOUTS[value]}</label>`;
+  return adminLayout(ctx, {
+    title: page ? page.title : 'New page',
+    body: html`<p><a href="/admin/pages">← All pages</a></p>
+<h1 class="admin-h1">${page ? page.title : 'New page'}</h1>
+${page && !page.published ? html`<div class="admin-card notice"><p><strong>This page isn't published.</strong> Visitors get "page not found"; you can see it because you're signed in.</p></div>` : ''}
+<form method="post" action="${page ? `/admin/pages/${page.id}` : '/admin/pages'}" enctype="multipart/form-data" class="admin-form admin-card wide">
+  ${csrfInput(ctx)}
+  ${Object.keys(errors ?? {}).length ? html`<p class="field-error">Please check the details marked below.</p>` : ''}
+  <label>${page ? 'Replace with an HTML file (optional)' : 'Upload an HTML file'}<input type="file" name="file" accept=".html,.htm,text/html">${fieldError(errors, 'file')}</label>
+  <p class="muted">${page ? 'Choosing a file replaces the HTML below when you save.' : 'Or paste the HTML into the box below instead. A blank title and address are filled in from the file.'}</p>
+  <div class="form-pair">
+    <label>Title${page ? '' : ' (blank: the file\'s title)'}<input name="title" value="${d.title}" maxlength="200">${fieldError(errors, 'title')}</label>
+    <label>Address${page ? '' : ' (blank: from the file name)'}<span class="slug-row"><span class="muted">${bareBase(base)}/</span><input name="slug" value="${d.slug}" maxlength="100" placeholder="terms" autocapitalize="off" spellcheck="false"></span>${fieldError(errors, 'slug')}</label>
+  </div>
+  <label>Search result description (optional)<input name="description" value="${d.description}" maxlength="300"></label>
+  <fieldset class="admin-fieldset">
+    <legend>How it's shown</legend>
+    ${radio('site')}
+    <span class="muted">With the site's header and footer. Only the page's words, headings, lists, tables, links and pictures are kept; its own styles are left out so it matches the site.</span>
+    ${radio('standalone')}
+    <span class="muted">As its own document, with its own styles and without the site's header and footer. Scripts in it never run.</span>
+  </fieldset>
+  ${checkbox('published', d.published, 'Published (unticked, visitors get "page not found")')}
+  <label>HTML<textarea name="html" class="html-source" rows="24" spellcheck="false" autocapitalize="off">${d.html}</textarea>${fieldError(errors, 'html')}</label>
+  <div class="row-actions">
+    <button class="btn btn-navy">${page ? 'Save changes' : 'Create page'}</button>
+    ${page ? html`<a class="btn btn-outline" href="/${page.slug}" target="_blank" rel="noopener">View page</a>
+    <a class="btn btn-outline" href="/admin/pages/${page.id}/download">Download HTML</a>` : ''}
+  </div>
+</form>
+${page ? html`<form method="post" action="/admin/pages/${page.id}/delete" data-confirm="Delete this page? Its address will say page not found. You can put it back from the change history.">${csrfInput(ctx)}<button class="link-btn danger">Delete page</button></form>` : ''}
 <script src="/_engine/admin.js?v=${ctx.version}" defer></script>`,
   });
 }

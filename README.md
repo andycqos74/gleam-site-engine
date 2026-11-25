@@ -102,6 +102,33 @@ leaves, **Deactivate** their card: its link then says "This business card is no 
 details. **Delete permanently** erases the card and its change history. Card pages are `noindex`, left out of the
 sitemap and blocked in `robots.txt`; with Umami set up, *Save contact* taps are counted as the `card-save` event.
 
+## Pages (terms and conditions, privacy notices)
+
+For pages written elsewhere, such as terms and conditions, privacy and cookie notices or a returns policy, often
+saved from Word. Administrators manage them under **Admin → Pages**:
+
+1. **New page**, then upload the `.html` file (or paste its HTML into the box). A blank title, address and search
+   description are filled in from the file's `<title>`, its name and its description tag. Files saved in another
+   encoding (Word uses windows-1252) are converted to UTF-8.
+2. Choose the address, e.g. `terms` or `legal/cookies` (lower-case letters, numbers and hyphens). Addresses the site
+   already uses (its own pages, lists such as `/posts/…`, the theme's files, `/admin`, `/api`, `/media`, `/c`) are
+   refused.
+3. Choose how it's shown:
+   - **Inside the site's design**: with the site's header and footer. Only the content is kept (headings, paragraphs,
+     lists, tables, links, pictures); the file's own styles, scripts and forms are dropped. If the HTML has no `<h1>`,
+     the title is shown as one. Themes can style these pages with `staticPage` (see "Writing a theme").
+   - **Exactly as the file is**: the file is sent unchanged, with its own `<head>` and styles. A fragment gets a plain
+     document around it. Scripts never run (the page's Content-Security-Policy has `script-src 'none'`), and the
+     site's other security headers still apply, so outside stylesheets, fonts and images only load if the theme
+     allows their source in `csp`.
+4. Untick **Published** to keep a page from visitors while you work on it: they get "page not found", signed-in users
+   still see it.
+
+Edit the HTML in the box, or upload a new file to replace it. **Download HTML** saves the current version. Every save
+and deletion is in the change history, so **Put back** restores an earlier version or a deleted page. Published pages
+are in the sitemap. On the page itself, an administrator's **Edit this page** opens it in Admin → Pages. Pages don't
+appear in the menu by themselves: link to them from the footer (or anywhere) with **Edit this page**.
+
 ## Chat assistant
 
 An optional AI chat popup (bottom right of every page) where visitors ask about the site, e.g. *"When is the
@@ -405,6 +432,7 @@ Copy `themes/starter` to `themes/<your-name>` and edit. A theme is a folder with
   | `stylesheets`, `scripts` | Asset paths in the theme's `public/` folder |
   | `contact: { path, topics }` | Optional: the page whose form posts `name`, `email`, `topic`, `message` (and an empty `website` honeypot) |
   | `notFound(k)`, `favicon`, `shareImage`, `adminLogo`, `colours`, `csp` | Optional extras (`csp: { frameSrc: [...] }` allows e.g. a map embed; also `imgSrc`, `styleSrc`, `scriptSrc`, `fontSrc`, `connectSrc`) |
+  | `staticPage(k, { title, content, hasHeading })` | Optional: the body of a page from Admin → Pages. `content` is the cleaned HTML (already safe to output); `hasHeading` says whether it has its own `<h1>`, so add the title as one when it doesn't |
 
 - **Templates** get `k`, the engine's toolkit. For single fields: `k.text(key, { tag, cls })`, `k.headline`,
   `k.rich`, `k.image`, `k.link(key)` (words in `key`, address in `key.url`), `k.value(key)`. For lists:

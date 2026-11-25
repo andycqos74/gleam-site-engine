@@ -739,3 +739,8 @@ img.shape-circle, img.photo-wide, img.photo-side, img.about-main, img.camp-photo
 .is-editing .tile-circle .ed-item-tools, .is-editing .tile-archTop .ed-item-tools { right: 50%; transform: translateX(50%); }
 .is-editing .prog-card:hover { transform: rotate(var(--tilt, 0deg)); }
 .band-blue .ed-add, .band-navy .ed-add, .panel .ed-add { border-color: #fff; }
+
+/* Pages from Admin > Pages: tables and pictures from uploaded HTML */
+.static-page .prose table { width: 100%; border-collapse: collapse; font-size: 15px; display: block; overflow-x: auto; }
+.static-page .prose th, .static-page .prose td { border: 1px solid rgba(0, 0, 0, .15); padding: 8px 10px; text-align: left; vertical-align: top; }
+.static-page .prose img { max-width: 100%; height: auto; }
