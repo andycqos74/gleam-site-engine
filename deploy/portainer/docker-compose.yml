@@ -40,6 +40,10 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ASSISTANT_MODEL: ${ASSISTANT_MODEL:-claude-opus-5-5}
       ASSISTANT_EFFORT: ${ASSISTANT_EFFORT:-medium}
+      ANIMATE_MODEL: ${ANIMATE_MODEL:-claude-opus-5-5}
+      ANIMATE_EFFORT: ${ANIMATE_EFFORT:-medium}
+      # Animated photos, "Separate the subject": uncomment the anim service below and set ANIM_SERVICE_URL=http://anim:8000.
+      ANIM_SERVICE_URL: ${ANIM_SERVICE_URL:-}
     volumes:
       - site-data:/data
       # A custom theme kept on the server instead of built into the image: uncomment, set THEME to its folder name,
@@ -48,6 +52,15 @@ services:
     # Not using a tunnel? Remove the cloudflared service and publish a port for your reverse proxy instead:
     # ports:
     #   - "127.0.0.1:8081:8080"
+
+  # Optional: processing service for animated photos. Adds "Separate the subject from the background" to the
+  # editor's Animate panel (the person cut out, the background filled in behind them, so people move against it).
+  # Uncomment, set ANIM_SERVICE_URL=http://anim:8000 in the stack's variables, and redeploy. ~900 MB image (the
+  # model weights are inside it); ~130 MB of memory idle, up to ~1 GB while processing a photo. It holds no data and publishes no ports. Several sites on one server
+  # can share one: give it a fixed container name and put the stacks on a shared network.
+  # anim:
+  #   image: ghcr.io/andycqos74/gleam-anim-service:${ANIM_TAG:-latest}
+  #   restart: unless-stopped
 
   cloudflared:
     image: cloudflare/cloudflared:${CLOUDFLARED_TAG:-latest}

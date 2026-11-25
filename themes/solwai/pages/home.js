@@ -62,30 +62,6 @@ function contactForm(k, { form = {}, errors = {}, sent = false, topic } = {}) {
     </div>`;
 }
 
-// The hero's network-map photo plays as a live animation (public/animated-image.js in the engine): the cities
-// twinkle and flare, pulses run out from the hub along the lines, and the map drifts with a little parallax.
-// The light positions in img/anim/hero-solway.json were found automatically (src/anim/analyse.js). Only the
-// original photo is animated: a replacement photo shows still, and editors always see the plain photo.
-export const HERO_ANIMATION = {
-  src: '/img/anim/hero-solway.json',
-  image: '/img/hero-solway.jpg',
-  config: {
-    version: 1, loopSeconds: 8, speed: 0.8, intensity: 0.6,
-    effects: [
-      { type: 'drift', zoom: 0.02, panX: 14, panY: 8 },
-      { type: 'parallax', strength: 1, pointer: true, autoSway: true },
-      { type: 'twinkle', source: 'stars', density: 0.5, depth: 0.7 },
-      { type: 'sparkle', source: 'nodes', flare: true, depth: 1 },
-      { type: 'pulses', from: 'hub', to: 'nodes', minArea: 40, depth: 1 },
-    ],
-  },
-};
-
-function heroImage(k) {
-  if (k.ed || k.value('home.hero.image') !== HERO_ANIMATION.image) return k.image('home.hero.image', { cls: 'hero-photo', sizes: '100vw' });
-  return html`<animated-image class="hero-photo" src="${HERO_ANIMATION.src}" config="${JSON.stringify(HERO_ANIMATION.config)}" position="65% 50%" controls>${k.image('home.hero.image', { sizes: '100vw' })}</animated-image>`;
-}
-
 export function home(k, extra = {}) {
   const stats = k.items('stats');
   const apps = k.items('apps');
@@ -93,7 +69,7 @@ export function home(k, extra = {}) {
   return html`
 <div id="top" class="hero-band hero-band-home">
   <section class="hero-home">
-    ${heroImage(k)}
+    ${k.image('home.hero.image', { cls: 'hero-photo', sizes: '100vw' })}
     <div class="wrap hero-home-in">
       ${k.text('home.hero.label', { cls: 'mono on-navy', attrs: { 'data-enter': '' } })}
       ${k.text('home.hero.title', { tag: 'h1', cls: 'h1-home', attrs: { 'data-enter': '' } })}

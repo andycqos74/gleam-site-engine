@@ -58,7 +58,15 @@ const decode = (s) => s.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (m, e) => {
 });
 const oneLine = (s) => decode(String(s ?? '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
 
-export const isDocument = (source) => /^\s*(<!--[\s\S]*?-->\s*)*<(!doctype|html)\b/i.test(source);
+export const isDocument = (source) => {
+  let rest = String(source ?? '').trimStart();
+  while (rest.startsWith('<!--')) {
+    const end = rest.indexOf('-->', 4);
+    if (end === -1) return false;
+    rest = rest.slice(end + 3).trimStart();
+  }
+  return /^<(!doctype|html)\b/i.test(rest);
+};
 export const titleOf = (source) => oneLine(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(source)?.[1]) || oneLine(/<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(source)?.[1]);
 const descriptionOf = (source) => decode(/<meta\s+name=["']description["']\s+content=["']([^"']*)["']/i.exec(source)?.[1] ?? '').trim();
 const bodyOf = (source) => /<body[^>]*>([\s\S]*)<\/body>/i.exec(source)?.[1] ?? source.replace(/<head[\s\S]*?<\/head>/i, '').replace(/<\/?(html|!doctype)[^>]*>/gi, '');
@@ -140,7 +148,7 @@ export function createStaticPages(db, { theme }) {
     if (slugError) errors.slug = slugError;
     if (!source.trim()) errors.html = errors.file ?? 'Upload an HTML file or type the page\'s HTML.';
     else if (Buffer.byteLength(source) > MAX_HTML) errors.html = 'That HTML is too large (1 MB at most).';
-    else if (data.layout === 'site' && !contentHtml(source).replace(/<[^>]*>/g, '').trim()) errors.html = 'There are no words in this HTML to show.';
+    else if (data.layout === 'site' && !sanitizeHtml(contentHtml(source), { allowedTags: [], allowedAttributes: {} }).trim()) errors.html = 'There are no words in this HTML to show.';
     return { data, errors };
   }
 

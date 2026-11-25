@@ -36,7 +36,10 @@ src/                     The engine
   assistant.js           The visitor chat assistant (Claude): settings, site knowledge, conversations
   analytics.js           Visitor statistics: Umami's tracking script and the Umami API for Admin → Visitors
   cards.js, card-page.js Digital business cards: storage, vCard, QR codes, and the card page at /c/<code>
-public/                  Engine assets, served at /_engine/ (editor.js, editor.css, admin.js, chat.js, chat.css, card.css)
+  anim/                  Animated photos: light detection, effect settings, the editor's API and Ask Claude
+services/anim/           Optional processing service for animated photos (Python): depth layers, subject cut-out
+public/                  Engine assets, served at /_engine/ (editor.js, editor.css, admin.js, chat.js, chat.css, card.css,
+                         animated-image.js)
 themes/<name>/           One folder per theme
   theme.js               The manifest: content model, pages, layout, assets
   public/                The theme's CSS, JS, fonts and images, served at the site root
@@ -145,6 +148,52 @@ The same page lists the latest questions visitors asked and the answers they got
 the instructions. The popup is hidden while editing. Answers come from the `/_chat` endpoint (same site only, 30
 questions an hour per visitor); conversations are kept in memory for an hour. A theme can open the chat from its
 own button with `data-gchat-open`.
+
+## Animated photos
+
+Any photo on a site can play as a subtle, seamless loop: a slow drift with a little parallax, twinkling and
+sparkling lights, pulses of light along lines, or bubbles, dust, snow or embers in an area. It's drawn live in the
+visitor's browser from the photo itself (no video), so it costs only ~20 KB more than the still photo, stays sharp at
+any size, follows the pointer, pauses off-screen and shows the still photo to visitors whose device asks for
+reduced motion.
+
+1. In edit mode, click a photo and choose **Animate this photo…**. The photo is checked for points of light.
+2. Pick a starting point (*Subject drift* for people and places, *Network alive*, *Subtle*, *Twinkle only*,
+   *Cinematic drift*), switch effects on or off, and set the strength and speed. The preview plays exactly what
+   visitors will see. For particles, **Draw the area** and drag across the preview.
+3. Or describe it, e.g. *"make the lights twinkle and drift slowly to the right"*, and press **Ask Claude**. Claude
+   sees the photo and the lights found in it and proposes settings, which load into the preview with a short note.
+   Nothing changes for visitors until you press **Save animation**.
+4. **Remove animation** shows the still photo again.
+
+The animation belongs to the photo, so it plays wherever that photo appears. *Ask Claude* needs `ANTHROPIC_API_KEY`
+(see *Configuration*); everything else works without it. The SolwAI home page hero comes animated (a theme default
+that editors can change or remove). Not yet: video export. The design notes are in
+[docs/animated-images](docs/animated-images/HANDOVER.md).
+
+### Depth layers: people moving against the background (optional)
+
+On its own the engine plays every photo as one flat layer. With the **anim service** (`services/anim`, a separate
+Python container) editors get an extra choice per photo in the Animate panel: **Separate the subject from the
+background**. Tick it and the photo is cut into depth layers: the person (or other main subject) is cut out, the
+background behind them is filled in, and parallax moves the subject against the background. Photos are only
+processed when an editor ticks the box, and visitors only see the layers once the animation is saved with it ticked.
+
+- **How it works:** the service finds depth with *Depth Anything V2*, cuts out the subject with the
+  `isnet-general-use` model (the one rembg uses), splits the picture into 2–4 layers and fills each layer in behind
+  the nearer ones with *LaMa*. It takes 5–15 s the first time. The layers (WebP, ~20–60 KB each) are kept with the
+  uploads in `/data/media/anim/<id>/`, so each photo is only processed once.
+- **Turn it on (docker compose):** set `ANIM_SERVICE_URL=http://anim:8000` in `.env`, then
+  `docker compose --profile anim up --build`. **Portainer:** uncomment the `anim` service in
+  `deploy/portainer/docker-compose.yml` and set `ANIM_SERVICE_URL=http://anim:8000` in the stack's variables. The
+  image is published by GitHub Actions as `ghcr.io/andycqos74/gleam-anim-service`.
+- **Resources:** the image is ~900 MB (including ~410 MB of model weights, baked in at build time; nothing is
+  downloaded when it runs). It uses ~130 MB when idle and up to ~1 GB while processing a photo, because it loads
+  one model at a time and frees it afterwards. `ANIM_KEEP_MODELS=1` keeps all three loaded instead: ~4 s faster
+  per photo, but ~2–3 GB of memory all the time.
+- **Without the service** the option doesn't appear. If the service is down or fails, the editor is told and can try
+  again or animate the photo without it; animations already saved keep playing. `ANIM_SERVICE_TIMEOUT` (seconds,
+  default 300) limits the wait.
 
 ## Before go-live (QoS theme)
 
@@ -267,6 +316,8 @@ docker run --rm -v <stack>_site-data:/data -v /backups:/backups alpine \
 | `TRUST_PROXY` | Express `trust proxy` setting; defaults to private networks (tunnel/proxy containers) |
 | `ANTHROPIC_API_KEY` (or `ASSISTANT_API_KEY`) | Visitor chat assistant (Claude). Off unless set; each site then turns it on under **Admin → Chat assistant** |
 | `ASSISTANT_MODEL`, `ASSISTANT_EFFORT` | The assistant's model (default `claude-opus-5-5`) and effort: `low`, `medium` (default), `high`, `xhigh` or `max` |
+| `ANIMATE_MODEL`, `ANIMATE_EFFORT` | The model behind *Ask Claude* in the editor's **Animate this photo** panel (same API key; default `claude-opus-5-5`, effort `medium`) |
+| `ANIM_SERVICE_URL` | Optional: the anim processing service, e.g. `http://anim:8000`, so editors can separate the subject from the background in animated photos (see *Animated photos*). Blank = that option is hidden. `ANIM_SERVICE_TIMEOUT`: seconds to wait per photo (default 300) |
 | `ASSISTANT_MAX_MESSAGES` | Questions per conversation before the visitor is asked to start a new one (default 30) |
 | `UMAMI_URL`, `UMAMI_WEBSITE_ID` | Count visitors with an Umami server (address, and this site's website ID in Umami) |
 | `UMAMI_USERNAME`, `UMAMI_PASSWORD` or `UMAMI_API_KEY` | A view-only Umami login, so Admin → Visitors can show the figures |
@@ -393,14 +444,11 @@ Copy `themes/starter` to `themes/<your-name>` and edit. A theme is a folder with
   to pick from the photo library go in `public/img/`. Style `.ph` (an empty photo slot) and `.pill` (highlighted
   headline words); the editing tools style themselves.
 
-- **Animated images:** the engine's `<animated-image>` player (`/_engine/animated-image.js`, plain JS, ~9 KB
-  minified) plays a still photo as a subtle seamless loop: drift, parallax, twinkling lights, sparkles, pulses
-  along lines and particles in a region, drawn live on a canvas (no video). Wrap the photo's `<img>` (it stays as
-  the fallback) and point `src` at an analysis file made by `detectLights()` in `src/anim/analyse.js`:
-  `<animated-image src="/img/anim/x.json" config='{"effects":[…]}' position="65% 50%" controls>`. It stays still
-  for visitors who ask for reduced motion, pauses off-screen and adds a pause button with `controls`. The SolwAI
-  home page hero is the example (`themes/solwai/pages/home.js`); the design is in
-  [docs/animated-images](docs/animated-images/HANDOVER.md).
+- **Animated photos** (see *Animated photos* above) need nothing from a theme: `k.image`/`k.FI` wrap an animated
+  photo in `<animated-image>`, which takes the image's class (so style the photo by class, and its
+  `object-position` sets the animation's focal point). A theme can ship a default animation for one of its own
+  photos with `animations: { '/img/x.jpg': { analysis: '/img/anim/x.json', config } }`; make the analysis file
+  with `detectLights()` from `src/anim/analyse.js` (SolwAI's hero is the example).
 
 Run `npm test`, then `THEME=<your-name> npm run dev` to try it. The engine checks the manifest at start-up and
 explains anything missing.

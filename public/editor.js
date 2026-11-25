@@ -334,6 +334,8 @@
         const v = prompt('Describe the photo for people using screen readers (for example "Children playing football at Queens Arena"):', current);
         if (v != null) { markDirty(altT, v.trim()); if (node.tagName === 'IMG') node.alt = v.trim(); }
       }]);
+      const src = node.tagName === 'IMG' ? node.getAttribute('src') : '';
+      if (/^\/(media|img)\//.test(src || '')) items.push(['Animate this photo…', () => animatePanel(src, node.getAttribute('alt') || '')]);
       if (node.tagName === 'IMG') items.push(['Remove photo', () => setImage(node, '')]);
       imgMenu = el('div', { className: 'ed-pop ed-imgmenu ed-ui' }, items.map(([label, fn]) => el('button', { type: 'button', textContent: label, onclick: () => { closeImgMenu(); fn(); } })));
       document.body.append(imgMenu);
@@ -393,6 +395,189 @@
     }));
     container.after(btn);
   });
+
+  // ---------- animated photos (src/anim, /_engine/animated-image.js) ----------
+  // Pick a preset, switch effects on and off, adjust strength and speed, or describe the animation and let Claude
+  // propose settings. The preview plays exactly what visitors will see; nothing changes for them until "Save
+  // animation". Applies to this photo wherever it appears on the site.
+  let playerLoading;
+  const loadPlayer = () => playerLoading ??= new Promise((ok, no) => {
+    if (customElements.get('animated-image')) return ok();
+    document.head.append(el('script', { src: '/_engine/animated-image.js', onload: ok, onerror: no }));
+  });
+
+  async function animatePanel(src, alt) {
+    let info;
+    toast('Looking at the photo…', { sticky: true });
+    try {
+      [info] = await Promise.all([api('POST', '/api/animations/panel', { src }), loadPlayer()]);
+      document.querySelector('.ed-toast').hidden = true;
+    } catch (e) { return toast(e.message, { error: true }); }
+
+    const clone = (o) => JSON.parse(JSON.stringify(o));
+    let cfg = clone(info.config ?? info.presets[info.suggested].config);
+    let presetKey = info.config ? null : info.suggested;
+    let drawing = false;
+
+    const modal = el('div', { className: 'ed-modal ed-anim', role: 'dialog', ariaModal: 'true', ariaLabel: 'Animate this photo' });
+    const close = () => { modal.remove(); document.removeEventListener('keydown', onKey); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    const player = el('animated-image', { className: 'ed-anim-player' }, el('img', { src, alt }));
+    player.setAttribute('src', info.analysisUrl);
+    player.style.aspectRatio = `${info.width} / ${info.height}`;
+    const box = el('div', { className: 'ed-anim-box' });
+    const stage = el('div', { className: 'ed-anim-stage' }, [player, box]);
+
+    const found = info.found.nodes || info.found.stars
+      ? `Found ${info.found.nodes} lights and ${info.found.stars} small points of light in this photo.`
+      : 'No lights found in this photo: drift, parallax and particles suit it best.';
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const presetRow = el('div', { className: 'ed-chips' });
+    const effectRow = el('div', { className: 'ed-chips' });
+    const particleBox = el('div', { className: 'ed-anim-particles' });
+    const slider = (label, min, max, step, get, set, fmt) => {
+      const out = el('output');
+      const input = el('input', { type: 'range', min, max, step });
+      input.addEventListener('input', () => { set(Number(input.value)); presetKey = null; refresh(); });
+      return { row: el('label', { className: 'ed-field ed-range' }, [el('span', { className: 'ed-label' }, [label, ' ', out]), input]), sync: () => { input.value = get(); out.textContent = fmt(get()); } };
+    };
+    const intensity = slider('Strength', 0, 1, 0.05, () => cfg.intensity, (v) => { cfg.intensity = v; }, (v) => `${Math.round(v * 100)}%`);
+    const speed = slider('Speed', 0.25, 2, 0.05, () => cfg.speed, (v) => { cfg.speed = v; }, (v) => `${v.toFixed(2)}×`);
+    const pause = el('input', { type: 'checkbox', onchange: () => { cfg.pauseButton = pause.checked; refresh(); } });
+    const note = el('p', { className: 'ed-anim-note', hidden: true, role: 'status' });
+
+    // Optional depth layers (needs the processing service): the subject is cut out and moves against the background.
+    // Made on the first tick (up to a minute), then kept; part of the saved settings as cfg.depth.
+    const depthCheck = el('input', { type: 'checkbox' });
+    const depthNote = el('span', { className: 'ed-help', role: 'status' });
+    depthCheck.addEventListener('change', async () => {
+      if (depthCheck.checked && !info.depth.ready) {
+        depthCheck.disabled = true;
+        depthNote.textContent = 'Separating the subject from the background… this can take up to a minute.';
+        let failed = false;
+        try { info.depth = await api('POST', '/api/animations/depth', { src }); } catch (e) { failed = true; toast(e.message, { error: true }); }
+        depthCheck.disabled = false;
+        if (!info.depth.ready) {
+          depthCheck.checked = false;
+          depthNote.textContent = failed ? '' : 'Nothing in this photo stands apart from the background, so there’s nothing to separate.';
+          return;
+        }
+      }
+      cfg.depth = depthCheck.checked;
+      refresh();
+    });
+
+    const has = (type) => cfg.effects.some((e) => e.type === type);
+    function toggle(fx) {
+      if (has(fx.type)) cfg.effects = cfg.effects.filter((e) => e.type !== fx.type);
+      else cfg.effects.push(clone(fx.defaults));
+      presetKey = null; refresh();
+    }
+
+    function drawParticles() {
+      const p = cfg.effects.find((e) => e.type === 'particles');
+      if (!p) { particleBox.replaceChildren(); return; }
+      const kind = el('select', { onchange: () => { p.kind = kind.value; refresh(); } }, info.particleKinds.map((k) => el('option', { value: k, textContent: k[0].toUpperCase() + k.slice(1), selected: p.kind === k })));
+      const count = el('input', { type: 'range', min: 4, max: 60, step: 1, value: p.count ?? 24, oninput: () => { p.count = Number(count.value); refresh(false); } });
+      const b = p.region?.bbox;
+      particleBox.replaceChildren(
+        el('label', { className: 'ed-field' }, [el('span', { className: 'ed-label', textContent: 'Particles' }), kind]),
+        el('label', { className: 'ed-field ed-range' }, [el('span', { className: 'ed-label', textContent: 'How many' }), count]),
+        el('p', { className: 'ed-help', textContent: b ? `Area: ${b[2]} × ${b[3]} pixels, at ${b[0]}, ${b[1]}. ` : 'Area: the middle of the photo. ' },
+          el('button', { type: 'button', className: 'ed-btn ed-btn-sm', textContent: drawing ? 'Drag on the preview…' : 'Draw the area', onclick: () => { drawing = !drawing; stage.classList.toggle('is-drawing', drawing); drawParticles(); } })),
+      );
+    }
+
+    // Drag a rectangle on the preview to set where particles appear (image pixels; the preview has the photo's shape).
+    let start;
+    const toImage = (e) => { const r = player.getBoundingClientRect(); return [Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))]; };
+    stage.addEventListener('pointerdown', (e) => { if (!drawing) return; e.preventDefault(); start = toImage(e); stage.setPointerCapture(e.pointerId); });
+    stage.addEventListener('pointermove', (e) => {
+      if (!drawing || !start) return;
+      const [x, y] = toImage(e);
+      Object.assign(box.style, { display: 'block', left: `${Math.min(x, start[0]) * 100}%`, top: `${Math.min(y, start[1]) * 100}%`, width: `${Math.abs(x - start[0]) * 100}%`, height: `${Math.abs(y - start[1]) * 100}%` });
+    });
+    stage.addEventListener('pointerup', (e) => {
+      if (!drawing || !start) return;
+      const [x, y] = toImage(e);
+      const p = cfg.effects.find((fx) => fx.type === 'particles');
+      if (p && Math.abs(x - start[0]) > 0.02 && Math.abs(y - start[1]) > 0.02) {
+        p.region = { bbox: [Math.round(Math.min(x, start[0]) * info.width), Math.round(Math.min(y, start[1]) * info.height), Math.round(Math.abs(x - start[0]) * info.width), Math.round(Math.abs(y - start[1]) * info.height)] };
+      }
+      start = null; drawing = false; stage.classList.remove('is-drawing'); box.style.display = 'none';
+      refresh();
+    });
+
+    function refresh(redrawParticles = true) {
+      const shown = cfg.depth && info.depth.url ? info.depth.url : info.analysisUrl;
+      if (player.getAttribute('src') !== shown) player.setAttribute('src', shown);
+      player.setAttribute('config', JSON.stringify(cfg));
+      depthCheck.checked = !!cfg.depth;
+      if (cfg.depth) depthNote.textContent = `Cut into ${info.depth.layers} layers${info.depth.subjects ? ', with the subject in front' : ''}. Turn on Parallax (and Slow drift) to see it move.`;
+      presetRow.replaceChildren(...Object.entries(info.presets).map(([key, p]) => el('button', {
+        type: 'button', className: 'ed-chip', textContent: p.label, ariaPressed: String(key === presetKey),
+        onclick: () => { cfg = { ...clone(p.config), pauseButton: cfg.pauseButton ?? true, depth: !!cfg.depth }; presetKey = key; refresh(); },
+      })));
+      effectRow.replaceChildren(...info.effects.map((fx) => el('button', { type: 'button', className: 'ed-chip', textContent: fx.label, ariaPressed: String(has(fx.type)), onclick: () => toggle(fx) })));
+      intensity.sync(); speed.sync();
+      pause.checked = cfg.pauseButton !== false;
+      if (redrawParticles) drawParticles();
+    }
+
+    const controls = [
+      el('p', { className: 'ed-help', textContent: found + (reduce ? ' Your device asks for reduced motion, so the preview stays still (visitors with that setting see the still photo too).' : '') }),
+      el('div', { className: 'ed-field' }, [el('span', { className: 'ed-label', textContent: 'Start from' }), presetRow]),
+      el('div', { className: 'ed-field' }, [el('span', { className: 'ed-label', textContent: 'Effects' }), effectRow]),
+      ...(info.depth.available ? [el('div', { className: 'ed-field' }, [el('label', { className: 'ed-check' }, [depthCheck, ' Separate the subject from the background (people move against it)']), depthNote])] : []),
+      particleBox, intensity.row, speed.row,
+      el('label', { className: 'ed-check' }, [pause, ' Show a pause button on the photo']),
+    ];
+    if (info.ai) {
+      const prompt = el('textarea', { rows: 3, maxLength: 1000, placeholder: 'For example: make the lights twinkle and drift slowly towards the right' });
+      const ask = el('button', { type: 'button', className: 'ed-btn', textContent: 'Ask Claude' });
+      ask.addEventListener('click', async () => {
+        if (!prompt.value.trim()) return prompt.focus();
+        ask.disabled = true; ask.textContent = 'Thinking…';
+        try {
+          const r = await api('POST', '/api/animations/suggest', { src, prompt: prompt.value, config: cfg });
+          cfg = r.config; presetKey = null; refresh();
+          note.hidden = false;
+          note.textContent = `${r.note || 'Here’s a suggestion.'}${r.needsReview ? ' Check where the particles appear: Claude estimated the area. Use “Draw the area” to adjust it.' : ''} Review the preview, then save.`;
+          note.classList.toggle('is-warn', !!r.needsReview);
+        } catch (e) { toast(e.message, { error: true }); }
+        ask.disabled = false; ask.textContent = 'Ask Claude';
+      });
+      controls.push(el('div', { className: 'ed-field ed-anim-ai' }, [el('label', { className: 'ed-label', textContent: 'Or describe the animation' }), prompt, ask, note]));
+    }
+
+    const saveBtn = el('button', { type: 'button', className: 'ed-btn ed-primary', textContent: 'Save animation' });
+    saveBtn.addEventListener('click', async () => {
+      try {
+        await api('PUT', '/api/animations', { src, config: cfg });
+        close(); toast('Animation saved. Visitors see it now (it plays when you finish editing).');
+      } catch (e) { toast(e.message, { error: true }); }
+    });
+    const foot = [saveBtn,
+      el('button', { type: 'button', className: 'ed-btn', textContent: 'Reset to preset', onclick: () => { const k = presetKey ?? info.suggested; cfg = { ...clone(info.presets[k].config), pauseButton: cfg.pauseButton ?? true, depth: !!cfg.depth }; presetKey = k; note.hidden = true; refresh(); } })];
+    if (info.saved) {
+      foot.push(el('button', { type: 'button', className: 'ed-btn', textContent: 'Remove animation', onclick: async () => {
+        if (!confirm('Show this photo still again, everywhere it appears?')) return;
+        try { await api('PUT', '/api/animations', { src, config: null }); close(); toast('Animation removed.'); } catch (e) { toast(e.message, { error: true }); }
+      } }));
+    }
+    foot.push(el('button', { type: 'button', className: 'ed-btn', textContent: 'Cancel', onclick: close }));
+
+    modal.append(el('div', { className: 'ed-modal-box ed-anim-modal' }, [
+      el('div', { className: 'ed-modal-head' }, [el('h2', { textContent: 'Animate this photo' }), el('button', { type: 'button', className: 'ed-btn', textContent: 'Close', onclick: close })]),
+      el('div', { className: 'ed-anim-body' }, [el('div', { className: 'ed-anim-left' }, [stage, el('p', { className: 'ed-help', textContent: 'The animation applies to this photo wherever it appears on the site. Move the pointer over the preview to try the parallax.' })]), el('div', { className: 'ed-anim-controls' }, controls)]),
+      el('div', { className: 'ed-drawer-foot' }, foot),
+    ]));
+    document.body.append(modal);
+    document.addEventListener('keydown', onKey);
+    refresh();
+    saveBtn.focus();
+  }
 
   // ---------- drawer (all fields of an item, or page settings) ----------
   function fieldInput(name, f, value) {

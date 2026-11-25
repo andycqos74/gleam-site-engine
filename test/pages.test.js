@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createApp } from '../src/app.js';
 import { loadTheme } from '../src/theme.js';
-import { contentHtml, decodeUpload, titleOf } from '../src/static-pages.js';
+import { contentHtml, decodeUpload, isDocument, titleOf } from '../src/static-pages.js';
 
 const starter = await loadTheme({ theme: 'starter' });
 let server; let base; let dataDir; let app;
@@ -63,6 +63,8 @@ test('uploaded HTML is read in its own encoding and cleaned for the site layout'
   assert.match(text, /“Quoted”/);
   assert.match(text, /charset="utf-8"/);
   assert.equal(titleOf(TERMS), 'Terms & Conditions');
+  assert.equal(isDocument(' <!-- note -->\n<!doctype html>'), true);
+  assert.equal(isDocument('<!-- unfinished <html>'), false);
 
   const clean = contentHtml(TERMS);
   assert.doesNotMatch(clean, /script|style|onclick|javascript:|<main/i);

@@ -63,6 +63,7 @@ ${ctx.user ? adminBar(ctx, editUrl) : ''}
 ${editConfig ? html`<script type="application/json" id="edit-config">${safeJson(editConfig)}</script>
 <script src="/_engine/editor.js?v=${ctx.version}" defer></script>` : ''}
 ${theme.scripts.map((src) => html`<script src="${asset(ctx, src)}" defer></script>`)}
+${ctx.usesAnimation ? html`<script src="/_engine/animated-image.js?v=${ctx.version}" defer></script>` : ''}
 ${ctx.chat ? chatWidget(ctx) : ''}
 </body>
 </html>`;

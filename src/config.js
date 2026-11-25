@@ -30,6 +30,14 @@ export function loadConfig(env = process.env) {
     assistantEffort: ['low', 'medium', 'high', 'xhigh', 'max'].includes(env.ASSISTANT_EFFORT) ? env.ASSISTANT_EFFORT : 'medium',
     // Visitor messages per conversation before they're asked to start a new one.
     assistantMaxMessages: Number(env.ASSISTANT_MAX_MESSAGES || 30),
+    // Animated photos: the editor's "describe the animation" box uses the same API key. Model and effort can differ.
+    animateModel: env.ANIMATE_MODEL || 'claude-opus-5-5',
+    animateEffort: ['low', 'medium', 'high', 'xhigh', 'max'].includes(env.ANIMATE_EFFORT) ? env.ANIMATE_EFFORT : 'medium',
+    // Optional processing service (services/anim) that separates photos into depth layers, so people move against
+    // the background. e.g. http://anim:8000 on the same Docker network. Blank = every photo plays as one layer.
+    animServiceUrl: (env.ANIM_SERVICE_URL || '').trim().replace(/\/+$/, ''),
+    // Seconds to wait for one photo before giving up (and trying again later).
+    animServiceTimeout: Number(env.ANIM_SERVICE_TIMEOUT || 300),
     // Shared secret the AI voice agent sends to deliver phone messages into Admin > Messages. Blank = off.
     voiceApiToken: (env.VOICE_API_TOKEN || '').trim(),
     // Visitor statistics from an Umami server (see analytics.js). UMAMI_URL + UMAMI_WEBSITE_ID add the tracking

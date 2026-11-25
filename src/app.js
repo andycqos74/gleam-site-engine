@@ -9,6 +9,7 @@ import { createAuth, hashPassword, verifyPassword, passwordProblem, randomPasswo
 import { createMedia } from './media.js';
 import { createMailer } from './mail.js';
 import { createAssistant, cleanSettings } from './assistant.js';
+import { createAnimations } from './anim/index.js';
 import { createKit } from './kit.js';
 import { renderDocument } from './document.js';
 import { createAnalytics, RANGES, DEFAULT_RANGE, AnalyticsError } from './analytics.js';
@@ -45,6 +46,7 @@ export function createApp(config) {
     db, store, theme, config, siteName,
     digestKit: () => createKit({ theme, editing: false, fields: store.fields(), items: (c) => store.items(c), scheduled: store.scheduled }),
   });
+  const animations = createAnimations({ db, theme, mediaDir, config });
   const analytics = createAnalytics(config, { timeZone: theme.timeZone });
   const cards = createCards(db, { mediaDir, publicDir: theme.publicDir, siteName, theme, baseUrl: config.baseUrl });
   const pages = createStaticPages(db, { theme });
@@ -108,6 +110,8 @@ export function createApp(config) {
       fields: store.fields(),
       items: (coll) => store.items(coll, { includeHidden: editing }),
       scheduled: store.scheduled,
+      // Animated photos (src/anim): kit.js wraps a photo that has one, and document.js then loads the player.
+      animation: editing ? null : animations.lookup,
       path: req.path,
       url: req.originalUrl,
       query: req.query,
@@ -312,6 +316,14 @@ export function createApp(config) {
       else res.type('image/png').send(await qrPng(url));
     });
   }
+
+  // The analysis file an animated photo's player loads (light positions and layers). Immutable per photo.
+  app.get('/_anim/:id.json', (req, res, next) => {
+    const depth = typeof req.query.depth === 'string' ? req.query.depth : null;
+    const a = /^\d+$/.test(req.params.id) ? animations.analysisFile(Number(req.params.id), depth) : null;
+    if (!a) return next();
+    res.set('Cache-Control', 'public, max-age=86400').json(a);
+  });
 
   app.get('/robots.txt', (req, res) => res.type('text').send(`User-agent: *\nDisallow: /admin\nDisallow: /api\nDisallow: /_chat\nDisallow: /c/\n${config.baseUrl ? `Sitemap: ${config.baseUrl}/sitemap.xml\n` : ''}`));
   app.get('/sitemap.xml', (req, res) => {
@@ -658,6 +670,25 @@ export function createApp(config) {
   };
   api.get('/media', (req, res) => res.json({ media: [...media.list(), ...bundled()] }));
 
+  // Animated photos: the editor's Animate panel (public/editor.js). Claude only proposes settings; they reach
+  // visitors when an editor saves them here.
+  const animSrc = (req) => String(req.body?.src ?? req.query.src ?? '');
+  api.post('/animations/panel', async (req, res) => res.json(await animations.panel(animSrc(req))));
+  // Depth layers for the photo (optional; needs ANIM_SERVICE_URL). Can take up to a minute the first time.
+  api.post('/animations/depth', async (req, res) => res.json(await animations.makeDepth(animSrc(req))));
+  api.put('/animations', async (req, res) => res.json({ ok: true, config: await animations.save(animSrc(req), req.body.config ?? null, req.user.id) }));
+  const aiHits = new Map();
+  api.post('/animations/suggest', async (req, res) => {
+    // 30 requests an hour per editor keeps a stuck button from running up the API bill.
+    const hour = Math.floor(Date.now() / 3600e3);
+    const key = `${req.user.id}:${hour}`;
+    const hits = (aiHits.get(key) ?? 0) + 1;
+    if (aiHits.size > 1000) aiHits.clear();
+    aiHits.set(key, hits);
+    if (hits > 30) return res.status(429).json({ error: 'That’s a lot of AI requests this hour. Try again later, or use the presets.' });
+    res.json(await animations.suggest(animSrc(req), req.body.prompt, req.body.config));
+  });
+
   app.use('/api', api);
 
   // Static HTML pages (src/static-pages.js, Admin > Pages) at /<slug>. Theme pages, item pages and the theme's own
@@ -703,7 +734,7 @@ export function createApp(config) {
     const status = err instanceof ValidationError ? 400 : err.code === 'LIMIT_FILE_SIZE' ? 413 : err.status ?? 500;
     const message = err instanceof ValidationError ? err.message
       : err.code === 'LIMIT_FILE_SIZE' ? 'That photo is too large (25 MB maximum).'
-        : status < 500 ? err.message : 'Something went wrong. Please try again.';
+        : status < 500 || err.expose ? err.message : 'Something went wrong. Please try again.';
     if (status >= 500) console.error(err);
     if (req.path.startsWith('/api/') || req.accepts(['html', 'json']) === 'json') return res.status(status).json({ error: message });
     res.status(status).type('text').send(message);
@@ -714,5 +745,6 @@ export function createApp(config) {
   app.locals.pages = pages;
   app.locals.theme = theme;
   app.locals.analytics = analytics;
+  app.locals.animations = animations;
   return app;
 }
