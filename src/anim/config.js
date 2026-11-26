@@ -4,8 +4,14 @@
 
 import { ValidationError } from '../content/store.js';
 
-export const EFFECT_TYPES = ['drift', 'parallax', 'twinkle', 'sparkle', 'pulses', 'particles'];
+export const EFFECT_TYPES = ['drift', 'parallax', 'twinkle', 'sparkle', 'pulses', 'particles', 'shine', 'glow', 'ripple'];
 export const PARTICLE_KINDS = ['bubbles', 'dust', 'snow', 'embers'];
+// Area effects play inside one named area of the photo (a box, or a polygon), so there can be several of each.
+// Twinkle and sparkle can optionally be limited to an area too.
+export const AREA_TYPES = ['particles', 'shine', 'glow', 'ripple'];
+export const GLOW_TINTS = ['natural', 'warm', 'cool'];
+export const RIPPLE_DIRECTIONS = ['horizontal', 'vertical'];
+const MAX_PER_AREA_TYPE = 3;
 
 // What each effect looks like when it's switched on in the editor.
 export const EFFECT_DEFAULTS = {
@@ -15,10 +21,14 @@ export const EFFECT_DEFAULTS = {
   sparkle: { type: 'sparkle', source: 'nodes', flare: true },
   pulses: { type: 'pulses', from: 'hub', to: 'nodes', minArea: 40 },
   particles: { type: 'particles', kind: 'dust', count: 24, size: 1 },
+  shine: { type: 'shine', angle: 20, width: 0.25, sweeps: 1 },
+  glow: { type: 'glow', tint: 'natural', strength: 0.6, beats: 1 },
+  ripple: { type: 'ripple', amount: 0.5, waves: 3, direction: 'horizontal' },
 };
 
 export const EFFECT_LABELS = {
   drift: 'Slow drift', parallax: 'Parallax', twinkle: 'Twinkling lights', sparkle: 'Light sparkle', pulses: 'Pulses along lines', particles: 'Particles',
+  shine: 'Shine', glow: 'Glow', ripple: 'Ripple',
 };
 
 const preset = (label, types, intensity, speed) => ({ label, config: { version: 1, loopSeconds: 8, speed, intensity, effects: types.map((t) => ({ ...EFFECT_DEFAULTS[t] })) } });
@@ -50,7 +60,7 @@ const num = (v, min, max, fallback) => {
 const round = (n, places = 3) => Math.round(n * 10 ** places) / 10 ** places;
 const bool = (v, fallback) => (typeof v === 'boolean' ? v : fallback);
 
-// Clamps a particles region to the picture. Accepts { bbox: [x, y, w, h] } or { poly: [[x, y], ...] } (or a bare
+// Clamps an area to the picture. Accepts { bbox: [x, y, w, h] } or { poly: [[x, y], ...] } (or a bare
 // bbox array, as Claude returns it). Without one, the middle third of the picture.
 function cleanRegion(region, W, H) {
   const clampPt = ([x, y]) => [Math.round(num(x, 0, W, 0)), Math.round(num(y, 0, H, 0))];
@@ -65,6 +75,9 @@ function cleanRegion(region, W, H) {
   return { bbox: [Math.round(W / 3), Math.round(H / 3), Math.round(W / 3), Math.round(H / 3)] };
 }
 
+const cleanLabel = (v) => String(v ?? '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 40);
+const hasRegion = (e) => !!(e.region ?? e.bbox);
+
 // Returns a clean config, or throws a ValidationError. analysis gives the picture size for pixel values.
 export function cleanConfig(input, analysis = {}) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ValidationError('The animation settings are missing.');
@@ -75,10 +88,18 @@ export function cleanConfig(input, analysis = {}) {
   const out = [];
   for (const e of effects) {
     if (!e || !EFFECT_TYPES.includes(e.type)) throw new ValidationError(`Unknown animation effect: ${String(e?.type ?? '').slice(0, 40)}`);
-    if (e.type !== 'particles' && seen.has(e.type)) continue;
+    const area = AREA_TYPES.includes(e.type);
+    if (area ? out.filter((x) => x.type === e.type).length >= MAX_PER_AREA_TYPE : seen.has(e.type)) continue;
     seen.add(e.type);
     const c = { type: e.type };
     if (e.depth != null) c.depth = round(num(e.depth, 0, 1.5, 1));
+    if (e.layer != null && Number.isInteger(Number(e.layer))) c.layer = num(e.layer, 0, 7, 0);
+    // Every area effect has an area; twinkle and sparkle only when they're limited to one.
+    if (area || ((e.type === 'twinkle' || e.type === 'sparkle') && hasRegion(e))) {
+      c.region = cleanRegion(e.region ?? e.bbox, W, H);
+      const label = cleanLabel(e.label ?? e.region?.label);
+      if (label) c.label = label;
+    }
     switch (e.type) {
       case 'drift': {
         const maxPan = Math.round(W * 0.015);
@@ -86,17 +107,24 @@ export function cleanConfig(input, analysis = {}) {
         break;
       }
       case 'parallax': Object.assign(c, { strength: round(num(e.strength, 0, 2, 1)), pointer: bool(e.pointer, true), autoSway: bool(e.autoSway, true) }); break;
-      case 'twinkle': Object.assign(c, { source: 'stars', density: round(num(e.density, 0, 1, 0.5)) }); break;
-      case 'sparkle': Object.assign(c, { source: 'nodes', flare: bool(e.flare, true) }); break;
+      case 'twinkle': c.source = 'stars'; c.density = round(num(e.density, 0, 1, 0.5)); break;
+      case 'sparkle': c.source = 'nodes'; c.flare = bool(e.flare, true); break;
       case 'pulses': Object.assign(c, { from: 'hub', to: 'nodes', minArea: Math.round(num(e.minArea, 0, 10000, 40)) }); break;
       case 'particles':
-        if (out.filter((x) => x.type === 'particles').length >= 3) continue;
         Object.assign(c, {
           kind: PARTICLE_KINDS.includes(e.kind) ? e.kind : 'dust',
-          region: cleanRegion(e.region ?? e.bbox, W, H),
           count: Math.round(num(e.count, 1, 60, 24)),
           size: round(num(e.size, 0.3, 3, 1)),
         });
+        break;
+      case 'shine':
+        Object.assign(c, { angle: Math.round(num(e.angle, -60, 60, 20)), width: round(num(e.width, 0.1, 0.6, 0.25), 2), sweeps: Math.round(num(e.sweeps, 1, 3, 1)) });
+        break;
+      case 'glow':
+        Object.assign(c, { tint: GLOW_TINTS.includes(e.tint) ? e.tint : 'natural', strength: round(num(e.strength, 0, 1, 0.6), 2), beats: Math.round(num(e.beats, 1, 4, 1)) });
+        break;
+      case 'ripple':
+        Object.assign(c, { amount: round(num(e.amount, 0, 1, 0.5), 2), waves: Math.round(num(e.waves, 1, 8, 3)), direction: RIPPLE_DIRECTIONS.includes(e.direction) ? e.direction : 'horizontal' });
         break;
       default:
     }
@@ -117,6 +145,15 @@ export function cleanConfig(input, analysis = {}) {
 // The JSON Schema Claude's answer must follow (structured outputs). Number ranges can't be expressed in these
 // schemas, so they're described in words and cleanConfig() clamps them afterwards.
 const n = (description) => ({ type: 'number', description });
+// Where an area effect plays. Claude can't measure pixels exactly, so these are estimates the editor reviews.
+const areaProps = {
+  label: { type: 'string', description: 'A short name for the area, as an editor would say it (e.g. "club crest", "sea", "neon sign").' },
+  bbox: { type: 'array', items: { type: 'number' }, description: 'The area as [x, y, width, height] in image pixels: a box tightly around the thing to animate.' },
+};
+const optionalArea = {
+  label: { anyOf: [{ type: 'string' }, { type: 'null' }], description: 'Name of the area to limit this to, or null for the whole photo.' },
+  bbox: { anyOf: [{ type: 'array', items: { type: 'number' } }, { type: 'null' }], description: 'Limit to the lights inside [x, y, width, height] in image pixels, or null for the whole photo.' },
+};
 const effect = (type, props) => ({
   type: 'object', additionalProperties: false, required: ['type', ...Object.keys(props)],
   properties: { type: { type: 'string', const: type }, ...props },
@@ -136,19 +173,37 @@ export const MODEL_SCHEMA = {
         anyOf: [
           effect('drift', { zoom: n('Slow zoom amount, 0 to 0.05 (0.025 typical).'), panX: n('Horizontal drift in image pixels, small (under 1.5% of the width).'), panY: n('Vertical drift in image pixels, small.') }),
           effect('parallax', { strength: n('0 to 2, 1 typical. Moves with the pointer, and sways gently on its own.'), autoSway: { type: 'boolean', description: 'Sway gently when there is no pointer (phones).' } }),
-          effect('twinkle', { density: n('Share of the small star-like points that twinkle, 0 to 1.') }),
-          effect('sparkle', { flare: { type: 'boolean', description: 'Add a four-point star flare at the peak of each light.' } }),
+          effect('twinkle', { density: n('Share of the small star-like points that twinkle, 0 to 1.'), ...optionalArea }),
+          effect('sparkle', { flare: { type: 'boolean', description: 'Add a four-point star flare at the peak of each light.' }, ...optionalArea }),
           effect('pulses', { minArea: n('Only send pulses to lights at least this big (pixel area); 40 typical.') }),
           effect('particles', {
+            ...areaProps,
             kind: { type: 'string', enum: PARTICLE_KINDS },
-            bbox: { type: 'array', items: { type: 'number' }, description: 'Region [x, y, width, height] in image pixels where the particles appear.' },
             count: { type: 'integer', description: 'Number of particles, 1 to 60.' },
             size: n('Particle size multiplier, 0.3 to 3. 1 typical.'),
+          }),
+          effect('shine', {
+            ...areaProps,
+            angle: n('Tilt of the band of light in degrees, -60 to 60. 20 typical.'),
+            width: n('Width of the band as a share of the area, 0.1 to 0.6. 0.25 typical.'),
+            sweeps: { type: 'integer', description: 'Sweeps across the area per loop, 1 to 3. Usually 1.' },
+          }),
+          effect('glow', {
+            ...areaProps,
+            tint: { type: 'string', enum: GLOW_TINTS, description: 'natural brightens the area in its own colours; warm adds amber, cool adds blue.' },
+            strength: n('How bright the glow gets at its peak, 0 to 1. 0.6 typical.'),
+            beats: { type: 'integer', description: 'Glows per loop, 1 to 4. 1 is a slow breath.' },
+          }),
+          effect('ripple', {
+            ...areaProps,
+            amount: n('How far the area sways, 0 to 1. 0.5 typical; under 0.3 is barely there.'),
+            waves: { type: 'integer', description: 'Waves across the area, 1 to 8. 2 to 4 for water and flags.' },
+            direction: { type: 'string', enum: RIPPLE_DIRECTIONS, description: 'horizontal: rows sway sideways (water, heat haze, flags hanging down). vertical: columns bob up and down (a flag flying sideways, a banner).' },
           }),
         ],
       },
     },
     note: { type: 'string', description: 'One or two plain sentences for the editor: what you chose, and anything you could not do.' },
-    needsReview: { type: 'boolean', description: 'True if you estimated a region (e.g. particles bbox) rather than taking it from the analysis data.' },
+    needsReview: { type: 'boolean', description: 'True if you estimated an area (any bbox) rather than taking it from the analysis data.' },
   },
 };

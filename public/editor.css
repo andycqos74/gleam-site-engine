@@ -260,8 +260,16 @@ body:has(.ed-drawer) .admin-bar { display: none; }
 .ed-anim-note { background: var(--ed-soft); border-radius: 12px; padding: 10px 12px; font-size: 14px; }
 .ed-anim-note.is-warn { background: #fde4d8; }
 .ed-btn-sm { padding: 4px 10px; font-size: 12px; margin-left: 4px; }
-.ed-anim-particles:empty { display: none; }
-.ed-anim-particles { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 2px solid var(--ed-soft); border-radius: 12px; }
+.ed-anim-areas { display: flex; flex-direction: column; gap: 8px; }
+.ed-anim-area { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 2px solid var(--ed-soft); border-radius: 12px; }
+.ed-anim-area.is-active { border-color: var(--ed-warn); }
+.ed-anim-area-head { display: flex; align-items: center; gap: 10px; }
+.ed-anim-area-head input { flex: 1; min-width: 0; font: inherit; font-size: 14px; padding: 6px 10px; border: 2px solid var(--ed-soft); border-radius: 10px; }
+.ed-anim-outlines { position: absolute; inset: 0; pointer-events: none; }
+.ed-anim-outline { position: absolute; border: 1.5px dashed rgba(255, 255, 255, .85); border-radius: 4px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
+.ed-anim-outline.is-active { border-color: var(--ed-warn); }
+.ed-anim-outline span { position: absolute; left: -1.5px; bottom: 100%; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; line-height: 1.6; padding: 0 6px; border-radius: 4px 4px 0 0; background: rgba(0, 0, 0, .6); color: #fff; }
+.ed-anim-outline.at-top span { bottom: auto; top: 0; border-radius: 0 0 4px 0; }
 
 /* Admin > Pages */
 .admin-page .admin-form .html-source { font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace; font-size: 13px; line-height: 1.45; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 2; }
@@ -270,3 +278,4 @@ body:has(.ed-drawer) .admin-bar { display: none; }
 .admin-page .admin-fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .admin-page .admin-fieldset legend { font-size: 14px; font-weight: 800; padding: 0; margin-bottom: 6px; }
 .admin-page .admin-fieldset .muted { font-size: 14px; margin: 0 0 6px 30px; }
+.ed-anim-area select { font: inherit; font-size: 14px; padding: 6px 10px; border: 2px solid var(--ed-soft); border-radius: 10px; background: #fff; align-self: flex-start; }

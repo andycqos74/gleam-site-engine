@@ -152,7 +152,8 @@ own button with `data-gchat-open`.
 ## Animated photos
 
 Any photo on a site can play as a subtle, seamless loop: a slow drift with a little parallax, twinkling and
-sparkling lights, pulses of light along lines, or bubbles, dust, snow or embers in an area. It's drawn live in the
+sparkling lights, pulses of light along lines, and effects on one part of the photo: a shine sweeping across a
+sign or crest, a glow on a window or lamp, a ripple on water or a flag, or bubbles, dust, snow or embers. It's drawn live in the
 visitor's browser from the photo itself (no video), so it costs only ~20 KB more than the still photo, stays sharp at
 any size, follows the pointer, pauses off-screen and shows the still photo to visitors whose device asks for
 reduced motion.
@@ -160,11 +161,16 @@ reduced motion.
 1. In edit mode, click a photo and choose **Animate this photo…**. The photo is checked for points of light.
 2. Pick a starting point (*Subject drift* for people and places, *Network alive*, *Subtle*, *Twinkle only*,
    *Cinematic drift*), switch effects on or off, and set the strength and speed. The preview plays exactly what
-   visitors will see. For particles, **Draw the area** and drag across the preview.
-3. Or describe it, e.g. *"make the lights twinkle and drift slowly to the right"*, and press **Ask Claude**. Claude
-   sees the photo and the lights found in it and proposes settings, which load into the preview with a short note.
+   visitors will see.
+3. To animate part of the photo, press **+ Shine**, **+ Glow**, **+ Ripple** or **+ Particles** under *Animate part
+   of the photo* and drag a box on the preview around that part. Each area can be named, redrawn or removed, and is
+   outlined on the preview; up to three of each kind.
+4. Or describe it, e.g. *"make the club sign shine, let the sea ripple and drift slowly to the right"*, and press
+   **Ask Claude**. Claude sees the photo and the lights found in it and proposes settings, which load into the
+   preview with a short note. When you name something in the photo, Claude finds it and gives it an area; check the
+   outlines, since Claude estimates where things are, and redraw any that are off.
    Nothing changes for visitors until you press **Save animation**.
-4. **Remove animation** shows the still photo again.
+5. **Remove animation** shows the still photo again.
 
 The animation belongs to the photo, so it plays wherever that photo appears. *Ask Claude* needs `ANTHROPIC_API_KEY`
 (see *Configuration*); everything else works without it. The SolwAI home page hero comes animated (a theme default

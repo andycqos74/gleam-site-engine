@@ -140,10 +140,21 @@ Process jobs asynchronously with a simple queue. A worker thread is fine to star
     { "type": "twinkle",  "source": "stars", "density": 0.5 },
     { "type": "sparkle",  "source": "nodes", "flare": true },
     { "type": "pulses",   "from": "hub", "to": "nodes", "minArea": 40 },
-    { "type": "particles","kind": "bubbles", "region": { "poly": [[568,690],[628,690],[612,805],[588,805]] }, "count": 22, "layer": 1 }
+    { "type": "particles","kind": "bubbles", "region": { "poly": [[568,690],[628,690],[612,805],[588,805]] }, "count": 22, "layer": 1 },
+    { "type": "shine",    "label": "club sign", "region": { "bbox": [250,108,435,40] }, "angle": 20, "width": 0.25, "sweeps": 1 },
+    { "type": "glow",     "label": "window", "region": { "bbox": [682,120,205,45] }, "tint": "warm", "strength": 0.6, "beats": 1 },
+    { "type": "ripple",   "label": "sea", "region": { "bbox": [0,700,1920,380] }, "amount": 0.5, "waves": 3, "direction": "horizontal" }
   ]
 }
 ```
+- **Area effects** (built, after the first release): `particles`, `shine`, `glow` and `ripple` each play inside one
+  named area (`label` + `region`), up to three of each. `twinkle` and `sparkle` take an optional `region` too, which
+  limits them to the lights inside it. Shine, glow and ripple copy the area from the finished frame to a scratch
+  canvas, change it there, fade its edges with a feathered mask and draw it back, so they work on flat photos and
+  on depth layers alike. Claude gives areas as estimated boxes (and always sets `needsReview`); the editor outlines
+  them on the preview and editors can redraw them. Not built yet: lifting an object out of the photo so it can move
+  on its own (send the box to the processing service, cut out what's inside it and fill behind it, as for the
+  subject).
 - Validate against a JSON Schema on save, and reject unknown `type`s.
 - Ranges: `intensity` 0–1, `speed` 0.25–2, `loopSeconds` 4–12.
 - Presets are just stored configs:
