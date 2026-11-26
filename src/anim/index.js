@@ -20,7 +20,7 @@ import { now } from '../db.js';
 import { ValidationError } from '../content/store.js';
 import { detectLights } from './analyse.js';
 import { createLayerService } from './service.js';
-import { cleanConfig, MODEL_SCHEMA, PRESETS, EFFECT_TYPES, EFFECT_DEFAULTS, EFFECT_LABELS, PARTICLE_KINDS, suggestPreset } from './config.js';
+import { cleanConfig, MODEL_SCHEMA, PRESETS, EFFECT_TYPES, EFFECT_DEFAULTS, EFFECT_LABELS, PARTICLE_KINDS, AREA_TYPES, GLOW_TINTS, suggestPreset } from './config.js';
 
 const MAX_PROMPT = 1000;
 const LAYER_DEPTH = 0.45; // single-layer photos: a little parallax for the photo, more for the lights in front of it
@@ -36,16 +36,32 @@ How the animation works: the still image is drawn on a canvas and effects play o
 - twinkle: the small bright star-like points found in the image twinkle.
 - sparkle: the larger bright lights found in the image glow and flare.
 - pulses: dots of light travel from the brightest light (the hub) along straight lines to the other lights.
-- particles: bubbles, dust, snow or embers drift inside one rectangular region.
+
+Area effects play inside one area of the picture: a box you give as bbox [x, y, width, height] in image pixels,
+with a short label naming what's in it. Their edges are feathered, so a box a little bigger than the thing
+itself looks right. You can use up to three of each.
+- particles: bubbles, dust, snow or embers drift inside the area.
+- shine: a band of light sweeps across the area, catching its bright parts. Good for text, signs, logos, crests,
+  trophies, glass and metal.
+- glow: the area slowly brightens and fades, like a light being turned up. Good for signs, windows, lamps,
+  screens, a sunset, or drawing the eye to one thing.
+- ripple: the area sways gently, as if seen through moving water or air. Good for water, flags, banners,
+  foliage, smoke and heat haze. It warps what's inside the box, so keep the box on the thing that should move
+  and off faces and text.
+Twinkle and sparkle can also be limited to an area (give bbox and label), for example only the floodlights;
+otherwise set both to null for the whole picture.
 
 Rules:
 - Choose only from these effect types. Use twinkle, sparkle and pulses only when the analysis found lights
   (sparkle needs nodes; pulses needs a hub and several nodes; twinkle needs stars).
+- When the editor names something in the picture ("the crest", "the sea", "the sign above the door"), find it in
+  the image and use an area effect on it. Give one area per thing.
 - Keep motion subtle by default: this sits behind or beside text on a web page. Only go strong when asked.
-- For particles, base the region on the image and the analysis data. You can't see exact pixel positions: give
-  your best approximate bbox in image pixels and set needsReview to true.
-- If the request can't be done with these effects (for example making a person wave or adding sound), choose the
-  closest settings and say so in note.
+- You can't see exact pixel positions: give your best bbox in image pixels from the picture (scaled as stated)
+  and the analysis data, and set needsReview to true whenever you give a bbox.
+- Nothing can be moved out of the picture or made to act: an arm can't wave and a person can't turn their head.
+  If the request can't be done with these effects (or adds sound), choose the closest settings and say so in
+  note.
 - The note is for the editor: one or two short, plain sentences in British English.`;
 
 // Text summary of the analysis for the model: size, brightness and the biggest lights.
@@ -213,6 +229,8 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
       presets: Object.fromEntries(Object.entries(PRESETS).map(([k, p]) => [k, { label: p.label, config: p.config }])),
       effects: EFFECT_TYPES.map((type) => ({ type, label: EFFECT_LABELS[type], defaults: EFFECT_DEFAULTS[type] })),
       particleKinds: PARTICLE_KINDS,
+      areaTypes: AREA_TYPES,
+      glowTints: GLOW_TINTS,
       ai: hasKey,
     };
   }
@@ -269,18 +287,34 @@ export function createAnimations({ db, theme, mediaDir, config: given = {} }) {
     }
     if (result.refused) throw new ValidationError('The AI declined that request. Try describing it differently, or use the presets.');
     const out = result.output ?? {};
+    // Claude gives areas as a bare bbox (null for twinkle and sparkle over the whole picture).
     const effects = (Array.isArray(out.effects) ? out.effects : []).filter((e) => EFFECT_TYPES.includes(e?.type))
-      .map((e) => (e.type === 'particles' ? { ...e, region: { bbox: e.bbox } } : e));
+      .map(({ bbox, ...e }) => (Array.isArray(bbox) ? { ...e, region: { bbox } } : e));
     const clean = cleanConfig({ ...out, effects, pauseButton: current?.pauseButton, depth: current?.depth }, analysis);
     // Light effects with no lights to work on would do nothing: drop them and say so.
     const L = analysis.lights;
-    const usable = clean.effects.filter((e) => !(e.type === 'twinkle' && !L.stars.length) && !(e.type === 'sparkle' && !L.nodes.length) && !(e.type === 'pulses' && (!L.hub || L.nodes.length < 3)));
+    const inArea = (e, pts) => (e.region ? pts.filter(([x, y]) => inRegion(e.region, x, y)) : pts);
+    const usable = clean.effects.filter((e) => !(e.type === 'twinkle' && !inArea(e, L.stars).length) && !(e.type === 'sparkle' && !inArea(e, L.nodes).length) && !(e.type === 'pulses' && (!L.hub || L.nodes.length < 3)));
     let note = String(out.note ?? '').trim().slice(0, 500);
-    if (usable.length < clean.effects.length) note = `${note} (Light effects were left out: no lights were found in this photo.)`.trim();
-    return { config: { ...clean, effects: usable }, note, needsReview: !!out.needsReview || usable.some((e) => e.type === 'particles') };
+    if (usable.length < clean.effects.length) note = `${note} (Light effects were left out: no lights were found ${usable.length && clean.effects.some((e) => e.region && !usable.includes(e)) ? 'in that area' : 'in this photo'}.)`.trim();
+    return { config: { ...clean, effects: usable }, note, needsReview: !!out.needsReview || usable.some((e) => e.region) };
   }
 
   return { lookup, analyse, makeDepth, panel, save, suggest, analysisFile, hasKey, fileFor };
 }
 
 const round2 = (n) => Math.round(n * 100) / 100;
+
+// Whether a point is inside an area ({ bbox } or { poly }).
+export function inRegion(region, x, y) {
+  if (region.poly) {
+    let inside = false;
+    const p = region.poly;
+    for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+      if ((p[i][1] > y) !== (p[j][1] > y) && x < ((p[j][0] - p[i][0]) * (y - p[i][1])) / (p[j][1] - p[i][1]) + p[i][0]) inside = !inside;
+    }
+    return inside;
+  }
+  const [bx, by, bw, bh] = region.bbox;
+  return x >= bx && x <= bx + bw && y >= by && y <= by + bh;
+}

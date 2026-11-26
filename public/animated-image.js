@@ -1,5 +1,6 @@
 // <animated-image>: plays a still image as a subtle, seamless loop on a <canvas> (drift, parallax, twinkling
-// lights, sparkles, pulses along lines, particles in a region). Served by the engine at /_engine/animated-image.js.
+// lights, sparkles, pulses along lines, and area effects: particles, shine, glow and ripple inside one area of the
+// picture). Served by the engine at /_engine/animated-image.js.
 //
 //   <animated-image src="/img/anim/hero.json" config='{"effects":[...]}' position="65% 50%" controls>
 //     <img src="/img/hero.jpg" alt="…">           fallback: shown first, for no-JS, reduced motion and the LCP
@@ -40,6 +41,36 @@
   });
   const PARTICLE = { bubbles: ['ring', -1, 0.25], snow: ['soft', 1, 0.6], dust: ['dot', -0.3, 1], embers: ['ember', -1, 0.5] };
   const clamp = (v, a, b) => Math.min(b, Math.max(a, +v || 0));
+  const TINT = { warm: 'rgba(255,170,80,.45)', cool: 'rgba(110,190,255,.45)' };
+  const FEATHER = { shine: 0.1, glow: 0.22, ripple: 0.2 };
+  const AREA_ORDER = ['ripple', 'glow', 'shine']; // warp first, then light on top of it
+  // An area ({ bbox } or { poly }) as a polygon in image pixels.
+  const polyOf = (r, W, H) => {
+    if (r?.poly) return r.poly;
+    const b = r?.bbox || [0, 0, W, H];
+    return [[b[0], b[1]], [b[0] + b[2], b[1]], [b[0] + b[2], b[1] + b[3]], [b[0], b[1] + b[3]]];
+  };
+  const inside = (poly, x, y) => {
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      if ((poly[i][1] > y) !== (poly[j][1] > y) && x < ((poly[j][0] - poly[i][0]) * (y - poly[i][1])) / (poly[j][1] - poly[i][1]) + poly[i][0]) c = !c;
+    }
+    return c;
+  };
+  // A soft-edged mask for an area: the polygon, faded to nothing over the outer share f of its box.
+  function featherMask(poly, box, f) {
+    const N = 128; const c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d');
+    const bw = box[2] - box[0] || 1; const bh = box[3] - box[1] || 1;
+    g.fillStyle = '#fff'; g.beginPath();
+    poly.forEach(([x, y], i) => { const px = ((x - box[0]) / bw) * N; const py = ((y - box[1]) / bh) * N; if (i) g.lineTo(px, py); else g.moveTo(px, py); });
+    g.fill(); g.globalCompositeOperation = 'destination-in';
+    for (const [x1, y1] of [[N, 0], [0, N]]) {
+      const gr = g.createLinearGradient(0, 0, x1, y1);
+      gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(f, '#000'); gr.addColorStop(1 - f, '#000'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, N, N);
+    }
+    return c;
+  }
   const loadImg = (src) => new Promise((ok, no) => { const i = new Image(); i.decoding = 'async'; i.onload = () => ok(i); i.onerror = no; i.src = src; });
 
   class AnimatedImage extends HTMLElement {
@@ -127,13 +158,28 @@
       seed = 7;
       this.loop = clamp(c.loopSeconds || 8, 4, 12); this.speed = clamp(c.speed ?? 1, 0.25, 2); this.I = clamp(c.intensity ?? 0.6, 0, 1);
       const near = Math.max(0, ...this.layers.map((l) => l.depth));
+      const subjects = a.subjects || [];
       this.effects = (c.effects || []).map((e) => {
         const f = { ...e, depth: e.depth ?? (e.layer != null ? this.layers[e.layer]?.depth : null) ?? near };
+        const poly = e.region ? polyOf(e.region, a.width, a.height) : null;
+        const within = (pts) => (poly ? pts.filter(([x, y]) => inside(poly, x, y)) : pts);
         if (e.type === 'twinkle') {
           const d = clamp(e.density ?? 0.5, 0, 1);
-          f.items = stars.filter((_, i) => rnd() < d).map(([x, y, b]) => ({ x, y, b: (b || 200) / 255, k: 1 + Math.floor(rnd() * 3), ph: rnd() * TAU, s: 0.6 + rnd() * 1.2 }));
+          f.items = within(stars).filter((_, i) => rnd() < d).map(([x, y, b]) => ({ x, y, b: (b || 200) / 255, k: 1 + Math.floor(rnd() * 3), ph: rnd() * TAU, s: 0.6 + rnd() * 1.2 }));
         } else if (e.type === 'sparkle') {
-          f.items = nodes.map(([x, y, ar]) => ({ x, y, r: Math.min(60, 10 + Math.sqrt(ar) * 1.6), ph: rnd(), k: 1 + Math.floor(rnd() * 2) }));
+          f.items = within(nodes).map(([x, y, ar]) => ({ x, y, r: Math.min(60, 10 + Math.sqrt(ar) * 1.6), ph: rnd(), k: 1 + Math.floor(rnd() * 2) }));
+        } else if (FEATHER[e.type]) {
+          // Shine, glow and ripple work on the picture itself, so they move with the layer the area is on: the one
+          // named, else the cut-out subject the area sits on, else the background.
+          f.poly = poly || polyOf(null, a.width, a.height);
+          const xs = f.poly.map((p) => p[0]); const ys = f.poly.map((p) => p[1]);
+          f.box = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+          const cx = (f.box[0] + f.box[2]) / 2; const cy = (f.box[1] + f.box[3]) / 2;
+          const sub = subjects.find((sj) => sj.bbox && cx >= sj.bbox[0] && cx <= sj.bbox[0] + sj.bbox[2] && cy >= sj.bbox[1] && cy <= sj.bbox[1] + sj.bbox[3]);
+          const layer = e.layer ?? sub?.layer ?? 0;
+          f.depth = e.depth ?? this.layers[layer]?.depth ?? this.layers[0].depth;
+          f.mask = featherMask(f.poly, f.box, FEATHER[e.type]);
+          f.area = true;
         } else if (e.type === 'pulses' && hub) {
           f.hub = hub; const min = e.minArea ?? 40; const far = Math.max(a.width, a.height) * 0.08;
           f.items = nodes.slice(1).filter((n) => n[2] > min && Math.hypot(n[0] - hub[0], n[1] - hub[1]) > far).map(([x, y]) => ({ x, y, ph: rnd(), dir: rnd() < 0.5 ? 1 : -1 }));
@@ -148,6 +194,7 @@
         }
         return f;
       });
+      this.areas = this.effects.filter((e) => e.area).sort((x, y) => AREA_ORDER.indexOf(x.type) - AREA_ORDER.indexOf(y.type));
       if (this.loaded && !this.raf) this.draw(this.clock);
     }
 
@@ -181,10 +228,12 @@
       const zoom = 1.01 + dz + 2 * (Math.abs(drift?.panX ?? 0) / W + 0.02 * ps) + dz * Math.sin(t * TAU);
       const s = Math.max(cv.width / W, cv.height / H) * zoom;
       const ox = (cv.width - W * s) * this.fx; const oy = (cv.height - H * s) * this.fy;
-      const at = (depth) => ctx.setTransform(s, 0, 0, s, ox + (pan[0] + pmx * depth * ps * 0.02 * W) * s, oy + (pan[1] + pmy * depth * ps * 0.012 * W) * s);
+      const shift = (depth) => [ox + (pan[0] + pmx * depth * ps * 0.02 * W) * s, oy + (pan[1] + pmy * depth * ps * 0.012 * W) * s];
+      const at = (depth) => { const [tx, ty] = shift(depth); ctx.setTransform(s, 0, 0, s, tx, ty); };
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0, 0, cv.width, cv.height);
       for (const l of this.layers) { at(l.depth); ctx.drawImage(l.img, 0, 0, W, H); }
+      for (const e of this.areas || []) this.drawArea(e, t, s, shift(e.depth), Math.max(W, H));
       const S = sprites(); ctx.globalCompositeOperation = 'lighter';
       for (const e of this.effects) {
         if (!e.items) continue;
@@ -223,6 +272,54 @@
           }
           ctx.restore();
         }
+      }
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+    }
+
+    // Shine, glow and ripple: the area of the finished picture is copied to a scratch canvas (in screen pixels, so
+    // it's sharp), changed there, faded at its edges with the area's mask, and drawn back over the picture.
+    drawArea(e, t, s, [tx, ty], side) {
+      const { ctx, canvas: cv, I } = this;
+      const rx = tx + e.box[0] * s; const ry = ty + e.box[1] * s; const rw = (e.box[2] - e.box[0]) * s; const rh = (e.box[3] - e.box[1]) * s;
+      const x0 = Math.max(0, Math.floor(rx)); const y0 = Math.max(0, Math.floor(ry));
+      const w = Math.min(cv.width, Math.ceil(rx + rw)) - x0; const h = Math.min(cv.height, Math.ceil(ry + rh)) - y0;
+      if (w < 2 || h < 2) return;
+      const off = this.off || (this.off = document.createElement('canvas'));
+      if (off.width !== w || off.height !== h) { off.width = w; off.height = h; }
+      const o = this.octx || (this.octx = off.getContext('2d'));
+      o.setTransform(1, 0, 0, 1, 0, 0); o.globalAlpha = 1; o.globalCompositeOperation = 'copy';
+      o.drawImage(cv, x0, y0, w, h, 0, 0, w, h);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      if (e.type === 'ripple') {
+        const A = clamp(e.amount ?? 0.5, 0, 1) * 0.008 * side * s * (0.5 + 0.5 * I); const waves = clamp(e.waves ?? 3, 1, 8);
+        const st = 2; o.globalCompositeOperation = 'source-over';
+        const vertical = e.direction === 'vertical'; const n = vertical ? w : h; const span = vertical ? rw : rh; const start = vertical ? x0 - rx : y0 - ry;
+        for (let i = 0; i < n; i += st) {
+          const v = (start + i + st / 2) / span;
+          const d = A * (0.75 * Math.sin(TAU * (waves * v - 2 * t)) + 0.25 * Math.sin(TAU * (waves * 2.3 * v + 3 * t) + 1));
+          if (vertical) o.drawImage(cv, x0 + i, y0, st, h, i, d, st, h);
+          else o.drawImage(cv, x0, y0 + i, w, st, d, i, w, st);
+        }
+        o.globalCompositeOperation = 'destination-in'; o.drawImage(e.mask, rx - x0, ry - y0, rw, rh);
+        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; ctx.drawImage(off, x0, y0);
+      } else if (e.type === 'glow') {
+        if (TINT[e.tint]) { o.globalCompositeOperation = 'source-atop'; o.fillStyle = TINT[e.tint]; o.fillRect(0, 0, w, h); }
+        o.globalCompositeOperation = 'destination-in'; o.drawImage(e.mask, rx - x0, ry - y0, rw, rh);
+        const b = 0.5 - 0.5 * Math.cos(t * TAU * clamp(e.beats ?? 1, 1, 4));
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = clamp(e.strength ?? 0.6, 0, 1) * (0.1 + 0.9 * b) * (0.4 + 0.6 * I) * 0.85;
+        ctx.drawImage(off, x0, y0);
+      } else if (e.type === 'shine') {
+        // A band of light crosses the area once per sweep, then rests until the next one.
+        const q = (t * clamp(e.sweeps ?? 1, 1, 3)) % 1; const p = -0.4 + q * 2.4;
+        const a = (clamp(e.angle ?? 20, -60, 60) * Math.PI) / 180; const dx = Math.cos(a); const dy = Math.sin(a);
+        const L = Math.abs(rw * dx) + Math.abs(rh * dy); const bw = clamp(e.width ?? 0.25, 0.1, 0.6);
+        const sx = rx - x0 + rw / 2 - (dx * L) / 2; const sy = ry - y0 + rh / 2 - (dy * L) / 2;
+        const g = o.createLinearGradient(sx + dx * L * (p - bw / 2), sy + dy * L * (p - bw / 2), sx + dx * L * (p + bw / 2), sy + dy * L * (p + bw / 2));
+        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.5, '#000'); g.addColorStop(1, 'rgba(0,0,0,0)');
+        o.globalCompositeOperation = 'lighter'; o.fillStyle = 'rgba(255,255,255,.35)'; o.fillRect(0, 0, w, h);
+        o.globalCompositeOperation = 'destination-in'; o.fillStyle = g; o.fillRect(0, 0, w, h);
+        o.drawImage(e.mask, rx - x0, ry - y0, rw, rh);
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 0.35 + 0.5 * I; ctx.drawImage(off, x0, y0);
       }
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }

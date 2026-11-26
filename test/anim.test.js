@@ -42,6 +42,32 @@ test('cleanConfig clamps numbers, rejects unknown effects and keeps particles in
   assert.equal(suggestPreset({ brightness: 0.5, lights: { nodes: [] } }), 'subject');
 });
 
+test('area effects: shine, glow and ripple each get a named area; twinkle and sparkle can be limited to one', async () => {
+  const { inRegion } = await import('../src/anim/index.js');
+  const c = cleanConfig({ effects: [
+    { type: 'shine', label: '  <b>Club</b> sign\u0007 ', region: { bbox: [100, 50, 300, 40] }, angle: 200, width: 0, sweeps: 9 },
+    { type: 'glow', bbox: [10, 10, 50, 50], tint: 'purple', strength: 4, beats: 0 },
+    { type: 'ripple', region: { poly: [[0, 400], [900, 400], [900, 600], [0, 600]] }, amount: 0.4, waves: 20, direction: 'diagonal' },
+    { type: 'ripple', region: { bbox: [0, 0, 10, 10] } },
+    { type: 'ripple', region: { bbox: [0, 0, 10, 10] } },
+    { type: 'ripple', region: { bbox: [0, 0, 10, 10] } },
+    { type: 'twinkle', density: 0.3, label: 'floodlights', region: { bbox: [0, 0, 300, 100] } },
+    { type: 'sparkle' },
+  ] }, { width: 1000, height: 600 });
+  assert.deepEqual(c.effects[0], { type: 'shine', region: { bbox: [100, 50, 300, 40] }, label: 'bClub/b sign', angle: 60, width: 0.1, sweeps: 3 });
+  assert.deepEqual(c.effects[1], { type: 'glow', region: { bbox: [10, 10, 50, 50] }, tint: 'natural', strength: 1, beats: 1 });
+  assert.deepEqual(c.effects[2], { type: 'ripple', region: { poly: [[0, 400], [900, 400], [900, 600], [0, 600]] }, amount: 0.4, waves: 8, direction: 'horizontal' });
+  assert.equal(c.effects.filter((e) => e.type === 'ripple').length, 3, 'three of each area effect at most');
+  assert.deepEqual(c.effects.find((e) => e.type === 'twinkle'), { type: 'twinkle', region: { bbox: [0, 0, 300, 100] }, label: 'floodlights', source: 'stars', density: 0.3 });
+  assert.deepEqual(c.effects.find((e) => e.type === 'sparkle'), { type: 'sparkle', source: 'nodes', flare: true }, 'no area: the whole photo');
+  // An area effect without an area gets the middle of the picture.
+  assert.deepEqual(cleanConfig({ effects: [{ type: 'shine' }] }, { width: 900, height: 600 }).effects[0].region, { bbox: [300, 200, 300, 200] });
+  assert.equal(inRegion({ bbox: [10, 10, 20, 20] }, 15, 29), true);
+  assert.equal(inRegion({ bbox: [10, 10, 20, 20] }, 31, 15), false);
+  assert.equal(inRegion({ poly: [[0, 0], [100, 0], [0, 100]] }, 20, 20), true);
+  assert.equal(inRegion({ poly: [[0, 0], [100, 0], [0, 100]] }, 80, 80), false);
+});
+
 test('the structured-output schema only uses features structured outputs support', () => {
   const walk = (s) => {
     if (!s || typeof s !== 'object') return;
@@ -162,6 +188,36 @@ test('Claude proposes settings from a description; they are validated and not sa
   // Nothing saved: the theme default still plays.
   const again = await (await json('POST', '/api/animations/panel', { src: '/img/hero-solway.jpg' })).json();
   assert.equal(again.config.effects.length, 5);
+});
+
+test('Claude can target parts of the photo: named areas come back as regions to review', async (t) => {
+  const calls = [];
+  const s = site({
+    animateCall: async (req) => {
+      calls.push(req);
+      return { output: { intensity: 0.5, speed: 1, loopSeconds: 8, note: 'The sign shines.', needsReview: false, effects: [
+        { type: 'shine', label: 'club sign', bbox: [250, 108, 435, 40], angle: 20, width: 0.25, sweeps: 1 },
+        { type: 'ripple', label: 'sea', bbox: [0, 900, 1920, 180], amount: 0.5, waves: 3, direction: 'horizontal' },
+        { type: 'twinkle', density: 0.5, label: null, bbox: null },
+        { type: 'sparkle', flare: true, label: 'empty corner', bbox: [0, 0, 5, 5] },
+      ] } };
+    },
+  });
+  t.after(s.close);
+  const json = await s.login();
+  const panel = await (await json('POST', '/api/animations/panel', { src: '/img/hero-solway.jpg' })).json();
+  assert.deepEqual(panel.areaTypes, ['particles', 'shine', 'glow', 'ripple']);
+  const r = await (await json('POST', '/api/animations/suggest', { src: '/img/hero-solway.jpg', prompt: 'make the sign shine' })).json();
+  assert.deepEqual(r.config.effects.map((e) => e.type), ['shine', 'ripple', 'twinkle'], 'sparkle in an area with no lights is left out');
+  assert.deepEqual(r.config.effects[0].region, { bbox: [250, 108, 435, 40] });
+  assert.equal(r.config.effects[0].label, 'club sign');
+  assert.equal(r.config.effects[2].region, undefined, 'twinkle over the whole photo');
+  assert.equal(r.needsReview, true, 'areas are always estimates');
+  assert.match(r.note, /no lights were found in that area/);
+  assert.match(calls[0].system, /shine: a band of light sweeps across the area/);
+  // Saved as proposed.
+  const saved = await (await json('PUT', '/api/animations', { src: '/img/hero-solway.jpg', config: r.config })).json();
+  assert.deepEqual(saved.config.effects[1], { type: 'ripple', region: { bbox: [0, 900, 1920, 180] }, label: 'sea', amount: 0.5, waves: 3, direction: 'horizontal' });
 });
 
 // ---------- depth layers from the optional processing service (services/anim), stubbed over real HTTP ----------

@@ -417,7 +417,7 @@
     const clone = (o) => JSON.parse(JSON.stringify(o));
     let cfg = clone(info.config ?? info.presets[info.suggested].config);
     let presetKey = info.config ? null : info.suggested;
-    let drawing = false;
+    let drawing = null; // the effect whose area is being drawn on the preview
 
     const modal = el('div', { className: 'ed-modal ed-anim', role: 'dialog', ariaModal: 'true', ariaLabel: 'Animate this photo' });
     const close = () => { modal.remove(); document.removeEventListener('keydown', onKey); };
@@ -426,7 +426,8 @@
     player.setAttribute('src', info.analysisUrl);
     player.style.aspectRatio = `${info.width} / ${info.height}`;
     const box = el('div', { className: 'ed-anim-box' });
-    const stage = el('div', { className: 'ed-anim-stage' }, [player, box]);
+    const outlines = el('div', { className: 'ed-anim-outlines', ariaHidden: 'true' });
+    const stage = el('div', { className: 'ed-anim-stage' }, [player, outlines, box]);
 
     const found = info.found.nodes || info.found.stars
       ? `Found ${info.found.nodes} lights and ${info.found.stars} small points of light in this photo.`
@@ -435,7 +436,7 @@
 
     const presetRow = el('div', { className: 'ed-chips' });
     const effectRow = el('div', { className: 'ed-chips' });
-    const particleBox = el('div', { className: 'ed-anim-particles' });
+    const areaBox = el('div', { className: 'ed-anim-areas' });
     const slider = (label, min, max, step, get, set, fmt) => {
       const out = el('output');
       const input = el('input', { type: 'range', min, max, step });
@@ -468,28 +469,83 @@
       refresh();
     });
 
+    // Effects for the whole photo are switched on and off with chips; area effects (shine, glow, ripple, particles)
+    // are added one area at a time, and twinkle and sparkle can be limited to an area too.
+    const areaTypes = info.areaTypes ?? ['particles'];
+    const isArea = (e) => areaTypes.includes(e.type) || !!e.region;
     const has = (type) => cfg.effects.some((e) => e.type === type);
     function toggle(fx) {
       if (has(fx.type)) cfg.effects = cfg.effects.filter((e) => e.type !== fx.type);
       else cfg.effects.push(clone(fx.defaults));
       presetKey = null; refresh();
     }
+    const middle = () => ({ bbox: [Math.round(info.width / 3), Math.round(info.height / 3), Math.round(info.width / 3), Math.round(info.height / 3)] });
+    function addArea(fx) {
+      if (cfg.effects.filter((e) => e.type === fx.type).length >= 3) return toast(`Three ${fx.label.toLowerCase()} areas at most.`, { error: true });
+      const e = { ...clone(fx.defaults), region: middle() };
+      cfg.effects.push(e); presetKey = null;
+      startDrawing(e);
+    }
+    function startDrawing(e) { drawing = drawing === e ? null : e; stage.classList.toggle('is-drawing', !!drawing); refresh(); }
+    const titleCase = (k) => k[0].toUpperCase() + k.slice(1);
+    const select = (options, value, set) => {
+      const s = el('select', { onchange: () => { set(s.value); refresh(); } }, options.map((k) => el('option', { value: k, textContent: titleCase(k), selected: value === k })));
+      return s;
+    };
+    const range = (label, min, max, step, value, set) => {
+      const r = el('input', { type: 'range', min, max, step, value, oninput: () => { set(Number(r.value)); refresh(false); } });
+      return el('label', { className: 'ed-field ed-range' }, [el('span', { className: 'ed-label', textContent: label }), r]);
+    };
+    // The controls each area effect has, besides its area.
+    const areaControls = (e) => ({
+      particles: () => [select(info.particleKinds, e.kind, (v) => { e.kind = v; }), range('How many', 4, 60, 1, e.count ?? 24, (v) => { e.count = v; })],
+      shine: () => [range('Band width', 0.1, 0.6, 0.05, e.width ?? 0.25, (v) => { e.width = v; }), range('Tilt', -60, 60, 5, e.angle ?? 20, (v) => { e.angle = v; })],
+      glow: () => [select(info.glowTints ?? ['natural'], e.tint ?? 'natural', (v) => { e.tint = v; }), range('Brightness', 0, 1, 0.05, e.strength ?? 0.6, (v) => { e.strength = v; })],
+      ripple: () => [select(['horizontal', 'vertical'], e.direction ?? 'horizontal', (v) => { e.direction = v; }), range('Amount', 0, 1, 0.05, e.amount ?? 0.5, (v) => { e.amount = v; }), range('Waves', 1, 8, 1, e.waves ?? 3, (v) => { e.waves = v; })],
+    }[e.type]?.() ?? []);
+    const effectLabel = (type) => info.effects.find((f) => f.type === type)?.label ?? type;
 
-    function drawParticles() {
-      const p = cfg.effects.find((e) => e.type === 'particles');
-      if (!p) { particleBox.replaceChildren(); return; }
-      const kind = el('select', { onchange: () => { p.kind = kind.value; refresh(); } }, info.particleKinds.map((k) => el('option', { value: k, textContent: k[0].toUpperCase() + k.slice(1), selected: p.kind === k })));
-      const count = el('input', { type: 'range', min: 4, max: 60, step: 1, value: p.count ?? 24, oninput: () => { p.count = Number(count.value); refresh(false); } });
-      const b = p.region?.bbox;
-      particleBox.replaceChildren(
-        el('label', { className: 'ed-field' }, [el('span', { className: 'ed-label', textContent: 'Particles' }), kind]),
-        el('label', { className: 'ed-field ed-range' }, [el('span', { className: 'ed-label', textContent: 'How many' }), count]),
-        el('p', { className: 'ed-help', textContent: b ? `Area: ${b[2]} × ${b[3]} pixels, at ${b[0]}, ${b[1]}. ` : 'Area: the middle of the photo. ' },
-          el('button', { type: 'button', className: 'ed-btn ed-btn-sm', textContent: drawing ? 'Drag on the preview…' : 'Draw the area', onclick: () => { drawing = !drawing; stage.classList.toggle('is-drawing', drawing); drawParticles(); } })),
+    function drawAreas() {
+      const areas = cfg.effects.filter(isArea);
+      const cards = areas.map((e) => {
+        const b = e.region?.bbox;
+        const name = el('input', { type: 'text', maxLength: 40, value: e.label ?? '', placeholder: 'Name this area (optional)', oninput: () => { e.label = name.value; drawOutlines(); } });
+        const remove = () => {
+          if (areaTypes.includes(e.type)) cfg.effects = cfg.effects.filter((x) => x !== e);
+          else { delete e.region; delete e.label; } // twinkle or sparkle: back to the whole photo
+          if (drawing === e) drawing = null;
+          presetKey = null; refresh();
+        };
+        return el('div', { className: `ed-anim-area${drawing === e ? ' is-active' : ''}` }, [
+          el('div', { className: 'ed-anim-area-head' }, [el('strong', { textContent: effectLabel(e.type) }), name]),
+          ...areaControls(e),
+          el('p', { className: 'ed-help' }, [
+            b ? `${b[2]} × ${b[3]} pixels, at ${b[0]}, ${b[1]}. ` : 'A drawn shape. ',
+            el('button', { type: 'button', className: 'ed-btn ed-btn-sm', textContent: drawing === e ? 'Drag on the preview…' : 'Redraw the area', onclick: () => startDrawing(e) }), ' ',
+            el('button', { type: 'button', className: 'ed-btn ed-btn-sm', textContent: areaTypes.includes(e.type) ? 'Remove' : 'Use the whole photo', onclick: remove }),
+          ]),
+        ]);
+      });
+      const adders = areaTypes.map((type) => info.effects.find((f) => f.type === type)).filter(Boolean)
+        .map((fx) => el('button', { type: 'button', className: 'ed-chip', textContent: `+ ${fx.label}`, onclick: () => addArea(fx) }));
+      areaBox.replaceChildren(
+        el('span', { className: 'ed-label', textContent: 'Animate part of the photo' }),
+        el('p', { className: 'ed-help', textContent: 'Add an effect, then drag a box on the preview around the part to animate: shine for text and logos, glow for signs and lights, ripple for water and flags.' }),
+        el('div', { className: 'ed-chips' }, adders),
+        ...cards,
       );
+      drawOutlines();
+    }
+    // Dashed outlines of the areas on the preview, so the editor can see what Claude (or they) picked.
+    function drawOutlines() {
+      outlines.replaceChildren(...cfg.effects.filter((e) => e.region?.bbox).map((e) => {
+        const [x, y, w, h] = e.region.bbox;
+        return el('div', { className: `ed-anim-outline${drawing === e ? ' is-active' : ''}${y < info.height * 0.06 ? ' at-top' : ''}`, style: `left:${(x / info.width) * 100}%;top:${(y / info.height) * 100}%;width:${(w / info.width) * 100}%;height:${(h / info.height) * 100}%` },
+          el('span', { textContent: e.label || effectLabel(e.type) }));
+      }));
     }
 
-    // Drag a rectangle on the preview to set where particles appear (image pixels; the preview has the photo's shape).
+    // Drag a rectangle on the preview to set an effect's area (image pixels; the preview has the photo's shape).
     let start;
     const toImage = (e) => { const r = player.getBoundingClientRect(); return [Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))]; };
     stage.addEventListener('pointerdown', (e) => { if (!drawing) return; e.preventDefault(); start = toImage(e); stage.setPointerCapture(e.pointerId); });
@@ -501,15 +557,15 @@
     stage.addEventListener('pointerup', (e) => {
       if (!drawing || !start) return;
       const [x, y] = toImage(e);
-      const p = cfg.effects.find((fx) => fx.type === 'particles');
+      const p = drawing;
       if (p && Math.abs(x - start[0]) > 0.02 && Math.abs(y - start[1]) > 0.02) {
         p.region = { bbox: [Math.round(Math.min(x, start[0]) * info.width), Math.round(Math.min(y, start[1]) * info.height), Math.round(Math.abs(x - start[0]) * info.width), Math.round(Math.abs(y - start[1]) * info.height)] };
       }
-      start = null; drawing = false; stage.classList.remove('is-drawing'); box.style.display = 'none';
+      start = null; drawing = null; stage.classList.remove('is-drawing'); box.style.display = 'none';
       refresh();
     });
 
-    function refresh(redrawParticles = true) {
+    function refresh(redrawAreas = true) {
       const shown = cfg.depth && info.depth.url ? info.depth.url : info.analysisUrl;
       if (player.getAttribute('src') !== shown) player.setAttribute('src', shown);
       player.setAttribute('config', JSON.stringify(cfg));
@@ -519,10 +575,10 @@
         type: 'button', className: 'ed-chip', textContent: p.label, ariaPressed: String(key === presetKey),
         onclick: () => { cfg = { ...clone(p.config), pauseButton: cfg.pauseButton ?? true, depth: !!cfg.depth }; presetKey = key; refresh(); },
       })));
-      effectRow.replaceChildren(...info.effects.map((fx) => el('button', { type: 'button', className: 'ed-chip', textContent: fx.label, ariaPressed: String(has(fx.type)), onclick: () => toggle(fx) })));
+      effectRow.replaceChildren(...info.effects.filter((fx) => !areaTypes.includes(fx.type)).map((fx) => el('button', { type: 'button', className: 'ed-chip', textContent: fx.label, ariaPressed: String(has(fx.type)), onclick: () => toggle(fx) })));
       intensity.sync(); speed.sync();
       pause.checked = cfg.pauseButton !== false;
-      if (redrawParticles) drawParticles();
+      if (redrawAreas) drawAreas();
     }
 
     const controls = [
@@ -530,11 +586,11 @@
       el('div', { className: 'ed-field' }, [el('span', { className: 'ed-label', textContent: 'Start from' }), presetRow]),
       el('div', { className: 'ed-field' }, [el('span', { className: 'ed-label', textContent: 'Effects' }), effectRow]),
       ...(info.depth.available ? [el('div', { className: 'ed-field' }, [el('label', { className: 'ed-check' }, [depthCheck, ' Separate the subject from the background (people move against it)']), depthNote])] : []),
-      particleBox, intensity.row, speed.row,
+      areaBox, intensity.row, speed.row,
       el('label', { className: 'ed-check' }, [pause, ' Show a pause button on the photo']),
     ];
     if (info.ai) {
-      const prompt = el('textarea', { rows: 3, maxLength: 1000, placeholder: 'For example: make the lights twinkle and drift slowly towards the right' });
+      const prompt = el('textarea', { rows: 3, maxLength: 1000, placeholder: 'For example: make the sign shine, let the water ripple, and drift slowly to the right' });
       const ask = el('button', { type: 'button', className: 'ed-btn', textContent: 'Ask Claude' });
       ask.addEventListener('click', async () => {
         if (!prompt.value.trim()) return prompt.focus();
@@ -543,7 +599,7 @@
           const r = await api('POST', '/api/animations/suggest', { src, prompt: prompt.value, config: cfg });
           cfg = r.config; presetKey = null; refresh();
           note.hidden = false;
-          note.textContent = `${r.note || 'Here’s a suggestion.'}${r.needsReview ? ' Check where the particles appear: Claude estimated the area. Use “Draw the area” to adjust it.' : ''} Review the preview, then save.`;
+          note.textContent = `${r.note || 'Here’s a suggestion.'}${r.needsReview ? ' Check the areas outlined on the preview: Claude estimated where they are. Use “Redraw the area” to adjust one.' : ''} Review the preview, then save.`;
           note.classList.toggle('is-warn', !!r.needsReview);
         } catch (e) { toast(e.message, { error: true }); }
         ask.disabled = false; ask.textContent = 'Ask Claude';
